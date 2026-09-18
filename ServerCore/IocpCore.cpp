@@ -28,7 +28,13 @@ bool IocpCore::Post(ULONG_PTR key, DWORD bytes, OVERLAPPED* overlapped)
     return PostQueuedCompletionStatus(_iocpHandle, bytes, key, overlapped) != FALSE;
 }
 
-bool IocpCore::GetCompletion(DWORD& bytes, ULONG_PTR& key, OVERLAPPED*& overlapped, DWORD timeoutMs)
+bool IocpCore::GetCompletion(DWORD& bytes, ULONG_PTR& key, OVERLAPPED*& overlapped, bool& ioSuccess, DWORD timeoutMs)
 {
-    return GetQueuedCompletionStatus(_iocpHandle, &bytes, &key, &overlapped, timeoutMs) != FALSE;
+    BOOL result = GetQueuedCompletionStatus(_iocpHandle, &bytes, &key, &overlapped, timeoutMs);
+
+    if (result == FALSE && overlapped == nullptr)
+        return false;
+
+    ioSuccess = result != FALSE;
+    return true;
 }

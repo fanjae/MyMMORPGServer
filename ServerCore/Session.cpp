@@ -3,7 +3,7 @@
 #include "SocketUtils.h"
 #include <iostream>
 
-Session::Session(SOCKET socket) : _socket(socket)
+Session::Session(SOCKET socket) : _socket(socket), _recvBuffer(4096)
 {
 }
 
@@ -36,7 +36,57 @@ bool Session::PostRecv()
             return false;
     }
 
+    _recvPending = true;
     return true;
+}
+
+bool Session::Send(const char* data, int32_t size)
+{
+    if (_socket == INVALID_SOCKET)
+        return false;
+
+    if (data == nullptr || size <= 0)
+        return false;
+
+    _sendQueue.emplace(data, data + size);
+
+    if (_sendPending)
+        return true;
+
+    return PostSend();
+}
+
+bool Session::Dispatch(IocpEvent* event, DWORD bytes, bool ioSuccess)
+{
+    if (event == nullptr)
+        return false;
+
+    switch (event->type)
+    {
+    case IocpEventType::Recv:
+        _recvPending = false;
+
+        if (!ioSuccess)
+        {
+            Close();
+            return true;
+        }
+
+        return OnRecv(bytes);
+
+    case IocpEventType::Send:
+        if (!ioSuccess)
+        {
+            _sendPending = false;
+            Close();
+            return true;
+        }
+
+        return OnSend(bytes);
+
+    default:
+        return false;
+    }
 }
 
 bool Session::OnRecv(DWORD bytes)
@@ -48,14 +98,106 @@ bool Session::OnRecv(DWORD bytes)
         return true;
     }
 
-    std::cout << "Recv Event: " << bytes << " bytes, Data: ";
-    std::cout.write(_recvEvent.buffer, bytes);
-    std::cout << '\n';
+    if (bytes > static_cast<DWORD>(_recvBuffer.WritableSize()))
+    {
+        Close();
+        return false;
+    }
+
+    memcpy(_recvBuffer.WritePos(), _recvEvent.buffer, bytes);
+
+    if (!_recvBuffer.OnWrite(bytes))
+    {
+        Close();
+        return false;
+    }
+
+    std::cout << "Recv Event: " << bytes << " bytes\n";
+    std::cout << "Buffered Data: " << _recvBuffer.DataSize() << " bytes\n";
+
+    if (!ProcessPackets())
+    {
+        Close();
+        return false;
+    }
 
     if (!PostRecv())
     {
         Close();
         return false;
+    }
+
+    return true;
+}
+
+bool Session::PostSend()
+{
+    if (_sendQueue.empty())
+        return true;
+
+    std::vector<char>& sendBuffer = _sendQueue.front();
+
+    _sendEvent.overlapped = {};
+    _sendEvent.wsaBuf.buf = sendBuffer.data();
+    _sendEvent.wsaBuf.len = static_cast<ULONG>(sendBuffer.size());
+
+    DWORD sentBytes = 0;
+    int32_t result = WSASend(_socket, &_sendEvent.wsaBuf, 1, &sentBytes, 0, &_sendEvent.overlapped, nullptr);
+
+    if (result == SOCKET_ERROR)
+    {
+        int32_t error = WSAGetLastError();
+
+        // 비동기 Send 요청이 정상적으로 대기 상태에 들어간 경우
+        if (error != WSA_IO_PENDING)
+            return false;
+    }
+
+    _sendPending = true;
+    return true;
+}
+
+bool Session::OnSend(DWORD bytes)
+{
+    std::cout << "Send Complete: " << bytes << " bytes\n";
+
+    if (_sendQueue.empty())
+        return false;
+
+    _sendQueue.pop();
+    _sendPending = false;
+
+    if (!_sendQueue.empty())
+        return PostSend();
+
+    return true;
+}
+
+bool Session::ProcessPackets()
+{
+    while (true)
+    {
+        if (_recvBuffer.DataSize() < sizeof(PacketHeader))
+            break;
+
+        PacketHeader* header = reinterpret_cast<PacketHeader*>(_recvBuffer.ReadPos());
+
+        if (header->size < sizeof(PacketHeader))
+            return false;
+
+        if (_recvBuffer.DataSize() < header->size)
+            break;
+
+        uint16_t payloadSize = header->size - sizeof(PacketHeader);
+        const char* payload = _recvBuffer.ReadPos() + sizeof(PacketHeader);
+
+        if (!OnPacket(header->opcode, payload, payloadSize))
+            return false;
+
+        if (!_recvBuffer.OnRead(header->size))
+            return false;
+
+        _recvBuffer.Clean();
     }
 
     return true;

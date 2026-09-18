@@ -39,3 +39,13 @@ struct RecvEvent : IocpEvent
     char buffer[1024] = {};
     WSABUF wsaBuf = {};
 };
+
+struct SendEvent : IocpEvent
+{
+    SendEvent()
+    {
+        type = IocpEventType::Send;
+    }
+
+    WSABUF wsaBuf = {};
+};
