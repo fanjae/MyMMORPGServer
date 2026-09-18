@@ -40,15 +40,17 @@ bool Listener::Start(const NetAddress& address)
     return true;
 }
 
-bool Listener::PostAccept(AcceptEvent& event)
+bool Listener::PostAccept()
 {
-    event.acceptSocket = SocketUtils::CreateSocket();
-    if (event.acceptSocket == INVALID_SOCKET)
+    _acceptEvent.overlapped = {};
+    _acceptEvent.acceptSocket = SocketUtils::CreateSocket();
+
+    if (_acceptEvent.acceptSocket == INVALID_SOCKET)
         return false;
 
     DWORD bytes = 0;
 
-    BOOL result = _acceptEx(_listenSocket, event.acceptSocket, event.buffer, 0, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &bytes, &event.overlapped);
+    BOOL result = _acceptEx(_listenSocket, _acceptEvent.acceptSocket, _acceptEvent.buffer, 0, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &bytes, &_acceptEvent.overlapped);
 
     if (result == FALSE)
     {
@@ -57,7 +59,7 @@ bool Listener::PostAccept(AcceptEvent& event)
         // 비동기 Accept 요청이 정상적으로 대기 상태에 들어간 경우
         if (error != ERROR_IO_PENDING)
         {
-            SocketUtils::Close(event.acceptSocket);
+            SocketUtils::Close(_acceptEvent.acceptSocket);
             return false;
         }
     }

@@ -4,11 +4,18 @@
 #include "IocpEvent.h"
 #include "Listener.h"
 #include "Session.h"
+#include "SessionManager.h"
 
 #include <iostream>
 
-IocpWorker::IocpWorker(IocpCore& iocp, Listener& listener) : _iocp(iocp), _listener(listener)
+IocpWorker::IocpWorker(IocpCore& iocp, SessionManager& sessionManager) : _iocp(iocp), _sessionManager(sessionManager)
 {
+}
+
+void IocpWorker::RegisterListener(Listener& listener, SessionFactory sessionFactory)
+{
+    ULONG_PTR key = reinterpret_cast<ULONG_PTR>(&listener);
+    _listeners[key] = ListenerContext{ &listener, std::move(sessionFactory) };
 }
 
 bool IocpWorker::Dispatch(DWORD timeoutMs)
@@ -16,8 +23,9 @@ bool IocpWorker::Dispatch(DWORD timeoutMs)
     DWORD bytes = 0;
     ULONG_PTR key = 0;
     OVERLAPPED* overlapped = nullptr;
+    bool ioSuccess = false;
 
-    if (!_iocp.GetCompletion(bytes, key, overlapped, timeoutMs))
+    if (!_iocp.GetCompletion(bytes, key, overlapped, ioSuccess, timeoutMs))
         return false;
 
     if (overlapped == nullptr)
@@ -29,12 +37,35 @@ bool IocpWorker::Dispatch(DWORD timeoutMs)
     {
         case IocpEventType::Accept:
         {
-            AcceptEvent* acceptEvent = static_cast<AcceptEvent*>(event);
-
-            if (!_listener.CompleteAccept(*acceptEvent))
+            auto it = _listeners.find(key);
+            if (it == _listeners.end())
                 return false;
 
-            std::cout << "Accept Event\n";
+            ListenerContext& context = it->second;
+            AcceptEvent* acceptEvent = static_cast<AcceptEvent*>(event);
+
+            if (!context.listener->CompleteAccept(*acceptEvent))
+                return false;
+
+            auto session = context.sessionFactory(acceptEvent->acceptSocket);
+            if (session == nullptr)
+                return false;
+
+            acceptEvent->acceptSocket = INVALID_SOCKET;
+
+            if (!_iocp.Register(reinterpret_cast<HANDLE>(session->GetSocket()), reinterpret_cast<ULONG_PTR>(session.get())))
+                return false;
+
+            if (!session->PostRecv())
+                return false;
+
+            _sessionManager.Add(std::move(session));
+
+            if (!context.listener->PostAccept())
+                return false;
+
+            std::cout << "Session Created\n";
+
             break;
         }
 
@@ -44,15 +75,29 @@ bool IocpWorker::Dispatch(DWORD timeoutMs)
             if (session == nullptr)
                 return false;
 
-            if (!session->OnRecv(bytes))
-                return false;
+            if (!session->Dispatch(event, bytes, ioSuccess))
+            {
+                session->Close();
+                break;
+            }
 
             break;
         }
 
         case IocpEventType::Send:
-            std::cout << "Send Event\n";
+        {
+            Session* session = reinterpret_cast<Session*>(key);
+            if (session == nullptr)
+                return false;
+
+            if (!session->Dispatch(event, bytes, ioSuccess))
+            {
+                session->Close();
+                break;
+            }
+
             break;
+        }
 
         default:
             return false;

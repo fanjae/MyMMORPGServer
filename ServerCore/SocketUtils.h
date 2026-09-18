@@ -17,6 +17,7 @@ public:
 
     static bool Listen(SOCKET socket, int32_t backlog = SOMAXCONN);
     static bool Bind(SOCKET socket, const NetAddress& address);
+    static bool Connect(SOCKET socket, const NetAddress& address);
     static bool UpdateAcceptContext(SOCKET acceptSocket, SOCKET listenSocket);
 
     static LPFN_ACCEPTEX GetAcceptEx(SOCKET socket);

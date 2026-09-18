@@ -3,8 +3,11 @@
 #include <winsock2.h>
 #include <mswsock.h>
 
+#include "IocpEvent.h"
+
 class NetAddress;
 struct AcceptEvent;
+
 
 class Listener
 {
@@ -16,7 +19,7 @@ public:
     Listener& operator=(const Listener&) = delete;
 
     bool Start(const NetAddress& address);
-    bool PostAccept(AcceptEvent& event);
+    bool PostAccept();
     bool CompleteAccept(AcceptEvent& event);
     void Close();
 
@@ -25,4 +28,5 @@ public:
 private:
     SOCKET _listenSocket = INVALID_SOCKET;
     LPFN_ACCEPTEX _acceptEx = nullptr;
+    AcceptEvent _acceptEvent;
 };
