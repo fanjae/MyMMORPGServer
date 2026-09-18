@@ -5,6 +5,10 @@
 #include "../ServerCore/IocpCore.h"
 #include "../ServerCore/IocpEvent.h"
 #include "../ServerCore/IocpWorker.h"
+#include "../ServerCore/SessionManager.h"
+#include "AuthTicketManager.h"
+#include "GameSession.h"
+#include "ServerSession.h"
 
 #include <iostream>
 
@@ -20,77 +24,91 @@ int main()
         return 1;
     }
 
-    NetAddress address(L"127.0.0.1", 7777);
-    Listener listener;
+    NetAddress gameAddress(L"127.0.0.1", 7777);
+    NetAddress serverAddress(L"127.0.0.1", 7778);
 
-    if (!listener.Start(address))
+    Listener gameListener;
+    Listener serverListener;
+
+    if (!gameListener.Start(gameAddress))
     {
         SocketUtils::Clear();
         return 1;
     }
 
-    if (!iocp.Register(reinterpret_cast<HANDLE>(listener.GetSocket()), 1))
+    if (!serverListener.Start(serverAddress))
     {
-        listener.Close();
+        gameListener.Close();
         SocketUtils::Clear();
         return 1;
     }
 
-    // 실제 클라이언트 연결을 비동기 Accept로 대기
-    AcceptEvent acceptEvent;
-
-    if (!listener.PostAccept(acceptEvent))
+    if (!iocp.Register(reinterpret_cast<HANDLE>(gameListener.GetSocket()), reinterpret_cast<ULONG_PTR>(&gameListener)))
     {
-        listener.Close();
+        gameListener.Close();
+        serverListener.Close();
         SocketUtils::Clear();
         return 1;
     }
 
-    IocpWorker worker(iocp, listener);
-
-    if (!worker.Dispatch(INFINITE))
+    if (!iocp.Register(reinterpret_cast<HANDLE>(serverListener.GetSocket()), reinterpret_cast<ULONG_PTR>(&serverListener)))
     {
-        SocketUtils::Close(acceptEvent.acceptSocket);
-        listener.Close();
+        gameListener.Close();
+        serverListener.Close();
         SocketUtils::Clear();
         return 1;
     }
 
-    Session session(acceptEvent.acceptSocket);
-    acceptEvent.acceptSocket = INVALID_SOCKET;
-
-    if (!iocp.Register(reinterpret_cast<HANDLE>(session.GetSocket()), reinterpret_cast<ULONG_PTR>(&session)))
+    if (!gameListener.PostAccept())
     {
-        session.Close();
-        listener.Close();
+        gameListener.Close();
+        serverListener.Close();
         SocketUtils::Clear();
         return 1;
     }
 
-    std::cout << "Session Created\n";
-
-    if (!session.PostRecv())
+    if (!serverListener.PostAccept())
     {
-        session.Close();
-        listener.Close();
+        gameListener.Close();
+        serverListener.Close();
         SocketUtils::Clear();
         return 1;
     }
+
+    SessionManager sessionManager;
+    AuthTicketManager authTicketManager;
+
+    IocpWorker worker(iocp, sessionManager);
+
+    worker.RegisterListener(gameListener,
+        [](SOCKET socket)
+        {
+            return std::make_unique<GameSession>(socket);
+        });
+
+    worker.RegisterListener(serverListener,
+        [&authTicketManager](SOCKET socket)
+        {
+            return std::make_unique<ServerSession>(socket, authTicketManager);
+        });
 
     std::cout << "Waiting for data...\n";
 
-    while (session.IsConnected())
+    while (true)
     {
         if (!worker.Dispatch(INFINITE))
         {
-            session.Close();
-            listener.Close();
+            gameListener.Close();
+            serverListener.Close();
             SocketUtils::Clear();
             return 1;
         }
+
+        sessionManager.Cleanup();
     }
 
-    listener.Close();
+    gameListener.Close();
+    serverListener.Close();
     SocketUtils::Clear();
     return 0;
 }

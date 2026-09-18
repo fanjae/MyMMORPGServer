@@ -123,12 +123,26 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AuthTicketManager.cpp" />
+    <ClCompile Include="GamePacketHandler.cpp" />
     <ClCompile Include="GameServer.cpp" />
+    <ClCompile Include="GameSession.cpp" />
+    <ClCompile Include="ServerPacketHandler.cpp" />
+    <ClCompile Include="ServerSession.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ServerCore\ServerCore.vcxproj">
       <Project>{5132c6e9-98be-48af-8d42-e7ee3d032e9e}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AuthTicketManager.h" />
+    <ClInclude Include="GamePacket.h" />
+    <ClInclude Include="GamePacketHandler.h" />
+    <ClInclude Include="GameSession.h" />
+    <ClInclude Include="ServerPacket.h" />
+    <ClInclude Include="ServerPacketHandler.h" />
+    <ClInclude Include="ServerSession.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
