@@ -1,9 +1,11 @@
 ﻿#include "pch.h"
 #include "Session.h"
 #include "SocketUtils.h"
-#include <iostream>
 
-Session::Session(SOCKET socket) : _socket(socket), _recvBuffer(4096)
+#include <iostream>
+#include <utility>
+
+Session::Session(SOCKET socket) : _socket(socket), _recvBuffer(MAX_PACKET_SIZE)
 {
 }
 
@@ -48,7 +50,10 @@ bool Session::Send(const char* data, int32_t size)
     if (data == nullptr || size <= 0)
         return false;
 
-    _sendQueue.emplace(data, data + size);
+    SendBuffer sendBuffer;
+    sendBuffer.buffer.assign(data, data + size);
+
+    _sendQueue.push(std::move(sendBuffer));
 
     if (_sendPending)
         return true;
@@ -135,11 +140,16 @@ bool Session::PostSend()
     if (_sendQueue.empty())
         return true;
 
-    std::vector<char>& sendBuffer = _sendQueue.front();
+    SendBuffer& sendBuffer = _sendQueue.front();
+
+    if (sendBuffer.sentBytes >= sendBuffer.buffer.size())
+        return false;
+
+    size_t remainingBytes = sendBuffer.buffer.size() - sendBuffer.sentBytes;
 
     _sendEvent.overlapped = {};
-    _sendEvent.wsaBuf.buf = sendBuffer.data();
-    _sendEvent.wsaBuf.len = static_cast<ULONG>(sendBuffer.size());
+    _sendEvent.wsaBuf.buf = sendBuffer.buffer.data() + sendBuffer.sentBytes;
+    _sendEvent.wsaBuf.len = static_cast<ULONG>(remainingBytes);
 
     DWORD sentBytes = 0;
     int32_t result = WSASend(_socket, &_sendEvent.wsaBuf, 1, &sentBytes, 0, &_sendEvent.overlapped, nullptr);
@@ -164,8 +174,22 @@ bool Session::OnSend(DWORD bytes)
     if (_sendQueue.empty())
         return false;
 
-    _sendQueue.pop();
+    if (bytes == 0)
+        return false;
+
+    SendBuffer& sendBuffer = _sendQueue.front();
+
+    size_t remainingBytes = sendBuffer.buffer.size() - sendBuffer.sentBytes;
+    if (bytes > remainingBytes)
+        return false;
+
+    sendBuffer.sentBytes += bytes;
     _sendPending = false;
+
+    if (sendBuffer.sentBytes < sendBuffer.buffer.size())
+        return PostSend();
+
+    _sendQueue.pop();
 
     if (!_sendQueue.empty())
         return PostSend();
@@ -183,6 +207,9 @@ bool Session::ProcessPackets()
         PacketHeader* header = reinterpret_cast<PacketHeader*>(_recvBuffer.ReadPos());
 
         if (header->size < sizeof(PacketHeader))
+            return false;
+
+        if (header->size > MAX_PACKET_SIZE)
             return false;
 
         if (_recvBuffer.DataSize() < header->size)

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+constexpr uint16_t MAX_PACKET_SIZE = 4096;
+
 #pragma pack(push, 1)
 
 struct PacketHeader

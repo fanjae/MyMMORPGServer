@@ -29,6 +29,12 @@ protected:
     virtual bool OnPacket(uint16_t opcode, const char* payload, uint16_t payloadSize) = 0;
 
 private:
+    struct SendBuffer
+    {
+        std::vector<char> buffer;
+        size_t sentBytes = 0;
+    };
+
     bool PostSend();
     bool OnSend(DWORD bytes);
     bool ProcessPackets();
@@ -37,7 +43,7 @@ private:
     RecvEvent _recvEvent;
     SendEvent _sendEvent;
     RecvBuffer _recvBuffer;
-    std::queue<std::vector<char>> _sendQueue;
+    std::queue<SendBuffer> _sendQueue;
     bool _recvPending = false;
     bool _sendPending = false;
 };
