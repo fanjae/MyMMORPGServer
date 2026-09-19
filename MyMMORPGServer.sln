@@ -9,6 +9,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GameServer", "GameServer\Ga
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LoginServer", "LoginServer\LoginServer.vcxproj", "{A11B3318-FE02-4DAD-BE6E-8B8EDA8FDFEE}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Protocol", "Protocol", "{C8D5274F-AC00-46C7-1F8D-E88E81087A52}"
+	ProjectSection(SolutionItems) = preProject
+		Protocol\ServerPacket.h = Protocol\ServerPacket.h
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64

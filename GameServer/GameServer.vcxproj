@@ -140,7 +140,6 @@
     <ClInclude Include="GamePacket.h" />
     <ClInclude Include="GamePacketHandler.h" />
     <ClInclude Include="GameSession.h" />
-    <ClInclude Include="ServerPacket.h" />
     <ClInclude Include="ServerPacketHandler.h" />
     <ClInclude Include="ServerSession.h" />
   </ItemGroup>

@@ -1,5 +1,5 @@
-﻿#include "ServerPacketHandler.h"
-#include "ServerPacket.h"
+﻿#include "../Protocol/ServerPacket.h"
+#include "ServerPacketHandler.h"
 #include "AuthTicketManager.h"
 
 #include <cstring>

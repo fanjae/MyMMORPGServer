@@ -81,9 +81,9 @@ int main()
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(gameListener,
-        [](SOCKET socket)
+        [&authTicketManager](SOCKET socket)
         {
-            return std::make_unique<GameSession>(socket);
+            return std::make_unique<GameSession>(socket, authTicketManager);
         });
 
     worker.RegisterListener(serverListener,

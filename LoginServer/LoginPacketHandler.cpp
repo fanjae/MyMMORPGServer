@@ -1,10 +1,16 @@
-﻿#include "LoginPacketHandler.h"
+﻿#include "GameServerClient.h"
+#include "LoginPacketHandler.h"
 #include "LoginPacket.h"
 #include "LoginSession.h"
 #include "../ServerCore/Packet.h"
 
 #include <cstring>
 #include <iostream>
+
+namespace
+{
+    uint64_t nextAuthKey = 1;
+}
 
 bool LoginPacketHandler::Handle(LoginSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
@@ -31,11 +37,16 @@ bool LoginPacketHandler::HandleLogin(LoginSession& session, const char* payload,
     // 임시 로그인 검증
     if (request.accountId == 1)
     {
+        uint64_t authKey = nextAuthKey++;
+
+        if (!session.GetGameServerClient().RegisterAuthTicket(request.accountId, authKey))
+            return false;
+
         response.result = LoginResult::Success;
-        response.authKey = 123456789;
+        response.authKey = authKey;
         response.gameServerPort = 7777;
 
-        std::cout << "Login Success\n";
+        std::cout << "Login Success: authKey=" << authKey << "\n";
     }
     else
     {

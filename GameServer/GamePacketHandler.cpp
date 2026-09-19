@@ -1,4 +1,5 @@
-﻿#include "GamePacketHandler.h"
+﻿#include "AuthTicketManager.h"
+#include "GamePacketHandler.h"
 #include "GamePacket.h"
 #include "GameSession.h"
 #include "../ServerCore/Packet.h"
@@ -32,16 +33,22 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
     {
         response.result = EnterGameResult::AlreadyAuthenticated;
     }
-    else if (request.authKey != 123456789)
-    {
-        response.result = EnterGameResult::InvalidAuthKey;
-    }
     else
     {
-        session.SetAuthenticated(true);
-        response.result = EnterGameResult::Success;
+        AuthTicket ticket;
 
-        std::cout << "Game Session Authenticated\n";
+        if (!session.GetAuthTicketManager().Consume(request.authKey, ticket))
+        {
+            response.result = EnterGameResult::InvalidAuthKey;
+        }
+        else
+        {
+            session.SetAuthenticated(true);
+            session.SetAccountId(ticket.accountId);
+            response.result = EnterGameResult::Success;
+
+            std::cout << "Game Session Authenticated: accountId=" << ticket.accountId << "\n";
+        }
     }
 
     PacketHeader header;

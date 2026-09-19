@@ -5,6 +5,7 @@
 #include "../ServerCore/IocpWorker.h"
 #include "../ServerCore/SessionManager.h"
 
+#include "GameServerClient.h"
 #include "LoginSession.h"
 
 #include <iostream>
@@ -45,13 +46,13 @@ int main()
     }
 
     SessionManager sessionManager;
-
+    GameServerClient gameServerClient;
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(listener,
-        [](SOCKET socket)
+        [&gameServerClient](SOCKET socket)
         {
-            return std::make_unique<LoginSession>(socket);
+            return std::make_unique<LoginSession>(socket, gameServerClient);
         });
 
     std::cout << "Login Server Started\n";

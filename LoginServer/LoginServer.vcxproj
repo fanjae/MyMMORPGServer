@@ -123,11 +123,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="GameServerClient.cpp" />
     <ClCompile Include="LoginPacketHandler.cpp" />
     <ClCompile Include="LoginServer.cpp" />
     <ClCompile Include="LoginSession.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="GameServerClient.h" />
     <ClInclude Include="LoginPacketHandler.h" />
     <ClInclude Include="LoginPacket.h" />
     <ClInclude Include="LoginSession.h" />

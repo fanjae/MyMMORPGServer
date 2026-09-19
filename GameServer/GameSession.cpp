@@ -1,7 +1,8 @@
 ﻿#include "GameSession.h"
 #include "GamePacketHandler.h"
+#include "AuthTicketManager.h"
 
-GameSession::GameSession(SOCKET socket) : Session(socket)
+GameSession::GameSession(SOCKET socket, AuthTicketManager& authTicketManager) : Session(socket), _authTicketManager(authTicketManager)
 {
 }
 

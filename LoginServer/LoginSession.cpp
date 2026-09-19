@@ -1,7 +1,8 @@
-﻿#include "LoginSession.h"
+﻿#include "GameServerClient.h"
+#include "LoginSession.h"
 #include "LoginPacketHandler.h"
 
-LoginSession::LoginSession(SOCKET socket) : Session(socket)
+LoginSession::LoginSession(SOCKET socket, GameServerClient& gameServerClient) : Session(socket), _gameServerClient(gameServerClient)
 {
 }
 
