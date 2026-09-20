@@ -15,6 +15,9 @@ public:
     uint32_t GetAccountId() const { return _accountId; }
     void SetAccountId(uint32_t accountId) { _accountId = accountId; }
 
+    uint32_t GetCharacterId() const { return _characterId; }
+    void SetCharacterId(uint32_t characterId) { _characterId = characterId; }
+
     AuthTicketManager& GetAuthTicketManager() { return _authTicketManager; }
 
 protected:
@@ -23,5 +26,6 @@ protected:
 private:
     AuthTicketManager& _authTicketManager;
     uint32_t _accountId = 0;
+    uint32_t _characterId = 0;
     bool _authenticated = false;
 };

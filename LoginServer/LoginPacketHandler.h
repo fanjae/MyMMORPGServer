@@ -11,4 +11,6 @@ public:
 
 private:
     static bool HandleLogin(LoginSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleCharacterList(LoginSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleCharacterSelect(LoginSession& session, const char* payload, uint16_t payloadSize);
 };

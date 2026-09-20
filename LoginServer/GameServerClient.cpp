@@ -26,7 +26,7 @@ namespace
     }
 }
 
-bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint64_t authKey)
+bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint32_t characterId, uint64_t authKey)
 {
     SOCKET socket = SocketUtils::CreateSocket();
     if (socket == INVALID_SOCKET)
@@ -42,6 +42,7 @@ bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint64_t authKey)
 
     RegisterAuthTicketRequest request;
     request.accountId = accountId;
+    request.characterId = characterId;
     request.authKey = authKey;
 
     PacketHeader header;

@@ -5,5 +5,5 @@
 class GameServerClient
 {
 public:
-    bool RegisterAuthTicket(uint32_t accountId, uint64_t authKey);
+    bool RegisterAuthTicket(uint32_t accountId, uint32_t characterId, uint64_t authKey);
 };

@@ -43,11 +43,12 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
         }
         else
         {
-            session.SetAuthenticated(true);
             session.SetAccountId(ticket.accountId);
+            session.SetCharacterId(ticket.characterId);
+            session.SetAuthenticated(true);
             response.result = EnterGameResult::Success;
 
-            std::cout << "Game Session Authenticated: accountId=" << ticket.accountId << "\n";
+            std::cout << "Game Session Authenticated: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << "\n";
         }
     }
 

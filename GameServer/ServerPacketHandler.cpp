@@ -27,9 +27,9 @@ bool ServerPacketHandler::HandleRegisterAuthTicket(ServerSession& session, const
     RegisterAuthTicketRequest request;
     memcpy(&request, payload, sizeof(request));
 
-    session.GetAuthTicketManager().Add(request.accountId, request.authKey);
+    session.GetAuthTicketManager().Add(request.accountId, request.characterId, request.authKey);
 
-    std::cout << "Auth Ticket Registered: accountId=" << request.accountId << " authKey=" << request.authKey << "\n";
+    std::cout << "Auth Ticket Registered: accountId=" << request.accountId << " characterId=" << request.characterId << " authKey=" << request.authKey << "\n";
 
     RegisterAuthTicketResponse response;
     response.result = RegisterAuthTicketResult::Success;

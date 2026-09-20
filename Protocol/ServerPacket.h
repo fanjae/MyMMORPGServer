@@ -19,6 +19,7 @@ enum class RegisterAuthTicketResult : uint8_t
 struct RegisterAuthTicketRequest
 {
     uint32_t accountId = 0;
+    uint32_t characterId = 0;
     uint64_t authKey = 0;
 };
 

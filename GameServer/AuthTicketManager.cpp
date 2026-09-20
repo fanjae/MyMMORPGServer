@@ -1,8 +1,8 @@
 ﻿#include "AuthTicketManager.h"
 
-void AuthTicketManager::Add(uint32_t accountId, uint64_t authKey)
+void AuthTicketManager::Add(uint32_t accountId, uint32_t characterId, uint64_t authKey)
 {
-    _tickets[authKey] = AuthTicket{ accountId, authKey };
+    _tickets[authKey] = AuthTicket{ accountId, characterId, authKey };
 }
 
 bool AuthTicketManager::Consume(uint64_t authKey, AuthTicket& ticket)
