@@ -7,5 +7,5 @@ ServerSession::ServerSession(SOCKET socket, AuthTicketManager& authTicketManager
 
 bool ServerSession::OnPacket(uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
-    return ServerPacketHandler::Handle(_authTicketManager, opcode, payload, payloadSize);
+    return ServerPacketHandler::Handle(*this, opcode, payload, payloadSize);
 }

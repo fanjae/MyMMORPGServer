@@ -6,6 +6,26 @@
 
 #include <cstring>
 
+namespace
+{
+    bool RecvAll(SOCKET socket, char* buffer, int32_t size)
+    {
+        int32_t totalRecvBytes = 0;
+
+        while (totalRecvBytes < size)
+        {
+            int32_t recvBytes = recv(socket, buffer + totalRecvBytes, size - totalRecvBytes, 0);
+
+            if (recvBytes == SOCKET_ERROR || recvBytes == 0)
+                return false;
+
+            totalRecvBytes += recvBytes;
+        }
+
+        return true;
+    }
+}
+
 bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint64_t authKey)
 {
     SOCKET socket = SocketUtils::CreateSocket();
@@ -26,7 +46,7 @@ bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint64_t authKey)
 
     PacketHeader header;
     header.size = sizeof(PacketHeader) + sizeof(RegisterAuthTicketRequest);
-    header.opcode = static_cast<uint16_t>(ServerPacketOpcode::RegisterAuthTicket);
+    header.opcode = static_cast<uint16_t>(ServerPacketOpcode::RegisterAuthTicketRequest);
 
     char sendBuffer[sizeof(PacketHeader) + sizeof(RegisterAuthTicketRequest)];
 
@@ -49,6 +69,41 @@ bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint64_t authKey)
         totalSentBytes += sentBytes;
     }
 
+    PacketHeader responseHeader;
+
+    if (!RecvAll(socket, reinterpret_cast<char*>(&responseHeader), sizeof(responseHeader)))
+    {
+        SocketUtils::Close(socket);
+        return false;
+    }
+
+    if (responseHeader.size != sizeof(PacketHeader) + sizeof(RegisterAuthTicketResponse))
+    {
+        SocketUtils::Close(socket);
+        return false;
+    }
+
+    if (responseHeader.opcode != static_cast<uint16_t>(ServerPacketOpcode::RegisterAuthTicketResponse))
+    {
+        SocketUtils::Close(socket);
+        return false;
+    }
+
+    RegisterAuthTicketResponse response;
+
+    if (!RecvAll(socket, reinterpret_cast<char*>(&response), sizeof(response)))
+    {
+        SocketUtils::Close(socket);
+        return false;
+    }
+
     SocketUtils::Close(socket);
+
+    if (response.authKey != authKey)
+        return false;
+
+    if (response.result != RegisterAuthTicketResult::Success)
+        return false;
+
     return true;
 }

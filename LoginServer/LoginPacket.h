@@ -11,7 +11,8 @@ enum class LoginPacketOpcode : uint16_t
 enum class LoginResult : uint8_t
 {
     Success = 0,
-    InvalidAccount = 1
+    InvalidAccount = 1,
+    ServerUnavailable = 2
 };
 
 #pragma pack(push, 1)

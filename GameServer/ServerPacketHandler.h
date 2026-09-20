@@ -2,13 +2,13 @@
 
 #include <cstdint>
 
-class AuthTicketManager;
+class ServerSession;
 
 class ServerPacketHandler
 {
 public:
-    static bool Handle(AuthTicketManager& authTicketManager, uint16_t opcode, const char* payload, uint16_t payloadSize);
+    static bool Handle(ServerSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize);
 
 private:
-    static bool HandleRegisterAuthTicket(AuthTicketManager& authTicketManager, const char* payload, uint16_t payloadSize);
+    static bool HandleRegisterAuthTicket(ServerSession& session, const char* payload, uint16_t payloadSize);
 };
