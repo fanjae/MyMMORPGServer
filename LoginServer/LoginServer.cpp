@@ -5,6 +5,7 @@
 #include "../ServerCore/IocpWorker.h"
 #include "../ServerCore/SessionManager.h"
 
+#include "AuthKeyGenerator.h"
 #include "GameServerClient.h"
 #include "LoginSession.h"
 
@@ -47,12 +48,13 @@ int main()
 
     SessionManager sessionManager;
     GameServerClient gameServerClient;
+    AuthKeyGenerator authKeyGenerator;
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(listener,
-        [&gameServerClient](SOCKET socket)
+        [&gameServerClient, &authKeyGenerator](SOCKET socket)
         {
-            return std::make_unique<LoginSession>(socket, gameServerClient);
+            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator);
         });
 
     std::cout << "Login Server Started\n";

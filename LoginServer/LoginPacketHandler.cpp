@@ -1,4 +1,5 @@
-﻿#include "GameServerClient.h"
+﻿#include "AuthKeyGenerator.h"
+#include "GameServerClient.h"
 #include "LoginPacketHandler.h"
 #include "LoginPacket.h"
 #include "LoginSession.h"
@@ -9,18 +10,16 @@
 
 namespace
 {
-    uint64_t nextAuthKey = 1;
-
     std::array<CharacterInfo, 2> CreateCharacters()
     {
-        std::array<CharacterInfo, 2> characters;
+        std::array<CharacterInfo, 2> characters{};
 
         characters[0].characterId = 1001;
-        memcpy(characters[0].name, "Warrior", sizeof("Warrior"));
+        memcpy(characters[0].name, "Warrior", strlen("Warrior"));
         characters[0].level = 10;
 
         characters[1].characterId = 1002;
-        memcpy(characters[1].name, "Magician", sizeof("Magician"));
+        memcpy(characters[1].name, "Magician", strlen("Magician"));
         characters[1].level = 15;
 
         return characters;
@@ -139,7 +138,10 @@ bool LoginPacketHandler::HandleCharacterSelect(LoginSession& session, const char
     }
     else
     {
-        uint64_t authKey = nextAuthKey++;
+        uint64_t authKey = 0;
+
+        if (!session.GetAuthKeyGenerator().Generate(authKey))
+            return false;
 
         if (!session.GetGameServerClient().RegisterAuthTicket(session.GetAccountId(), request.characterId, authKey))
         {
