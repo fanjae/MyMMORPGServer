@@ -16,7 +16,7 @@ public:
 
     bool Register(HANDLE handle, ULONG_PTR key);
     bool Post(ULONG_PTR key, DWORD bytes = 0, OVERLAPPED* overlapped = nullptr);
-    bool GetCompletion(DWORD& bytes, ULONG_PTR& key, OVERLAPPED*& overlapped, bool& ioSuccess, DWORD timeoutMs = INFINITE);
+    bool GetCompletion(DWORD& bytes, ULONG_PTR& key, OVERLAPPED*& overlapped, bool& ioSuccess, bool& timedOut, DWORD timeoutMs = INFINITE);
 
 private:
     HANDLE _iocpHandle = nullptr;

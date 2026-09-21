@@ -24,9 +24,13 @@ bool IocpWorker::Dispatch(DWORD timeoutMs)
     ULONG_PTR key = 0;
     OVERLAPPED* overlapped = nullptr;
     bool ioSuccess = false;
+    bool timedOut = false;
 
-    if (!_iocp.GetCompletion(bytes, key, overlapped, ioSuccess, timeoutMs))
+    if (!_iocp.GetCompletion(bytes, key, overlapped, ioSuccess, timedOut, timeoutMs))
         return false;
+
+    if (timedOut)
+        return true;
 
     if (overlapped == nullptr)
         return false;

@@ -96,7 +96,7 @@ int main()
 
     while (true)
     {
-        if (!worker.Dispatch(INFINITE))
+        if (!worker.Dispatch(1000))
         {
             gameListener.Close();
             serverListener.Close();
@@ -105,6 +105,7 @@ int main()
         }
 
         sessionManager.Cleanup();
+        authTicketManager.CleanupExpired();
     }
 
     gameListener.Close();
