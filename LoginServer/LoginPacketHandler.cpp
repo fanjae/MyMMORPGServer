@@ -4,19 +4,42 @@
 #include "LoginSession.h"
 #include "../ServerCore/Packet.h"
 
+#include <array>
 #include <cstring>
-#include <iostream>
 
 namespace
 {
     uint64_t nextAuthKey = 1;
+
+    std::array<CharacterInfo, 2> CreateCharacters()
+    {
+        std::array<CharacterInfo, 2> characters;
+
+        characters[0].characterId = 1001;
+        memcpy(characters[0].name, "Warrior", sizeof("Warrior"));
+        characters[0].level = 10;
+
+        characters[1].characterId = 1002;
+        memcpy(characters[1].name, "Magician", sizeof("Magician"));
+        characters[1].level = 15;
+
+        return characters;
+    }
+
+    const std::array<CharacterInfo, 2> characters = CreateCharacters();
 
     bool IsValidCharacter(uint32_t accountId, uint32_t characterId)
     {
         if (accountId != 1)
             return false;
 
-        return characterId == 1001 || characterId == 1002;
+        for (const CharacterInfo& character : characters)
+        {
+            if (character.characterId == characterId)
+                return true;
+        }
+
+        return false;
     }
 }
 
@@ -80,17 +103,10 @@ bool LoginPacketHandler::HandleCharacterList(LoginSession& session, const char* 
         return false;
 
     CharacterListResponse response;
-    response.characterCount = 2;
+    response.characterCount = static_cast<uint8_t>(characters.size());
 
-    response.characters[0].characterId = 1001;
-    memcpy(response.characters[0].name, "Warrior", sizeof("Warrior"));
-    strcpy_s(response.characters[0].name, "Warrior");
-    response.characters[0].level = 10;
-
-    response.characters[1].characterId = 1002;
-    memcpy(response.characters[1].name, "Magician", sizeof("Magician"));
-    strcpy_s(response.characters[1].name, "Magician");
-    response.characters[1].level = 15;
+    for (size_t i = 0; i < characters.size(); ++i)
+        response.characters[i] = characters[i];
 
     PacketHeader header;
     header.size = sizeof(PacketHeader) + sizeof(CharacterListResponse);
