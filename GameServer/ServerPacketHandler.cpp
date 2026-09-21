@@ -27,13 +27,19 @@ bool ServerPacketHandler::HandleRegisterAuthTicket(ServerSession& session, const
     RegisterAuthTicketRequest request;
     memcpy(&request, payload, sizeof(request));
 
-    session.GetAuthTicketManager().Add(request.accountId, request.characterId, request.authKey);
-
-    std::cout << "Auth Ticket Registered: accountId=" << request.accountId << " characterId=" << request.characterId << " authKey=" << request.authKey << "\n";
-
     RegisterAuthTicketResponse response;
-    response.result = RegisterAuthTicketResult::Success;
     response.authKey = request.authKey;
+
+    if (!session.GetAuthTicketManager().Add(request.accountId, request.characterId, request.authKey))
+    {
+        response.result = RegisterAuthTicketResult::Failed;
+    }
+    else
+    {
+        response.result = RegisterAuthTicketResult::Success;
+
+        std::cout << "Auth Ticket Registered: accountId=" << request.accountId << " characterId=" << request.characterId << " authKey=" << request.authKey << "\n";
+    }
 
     PacketHeader header;
     header.size = sizeof(PacketHeader) + sizeof(RegisterAuthTicketResponse);
