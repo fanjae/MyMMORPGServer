@@ -27,6 +27,7 @@ bool SocketUtils::Listen(SOCKET socket, int32_t backlog)
 
 bool SocketUtils::UpdateAcceptContext(SOCKET acceptSocket, SOCKET listenSocket)
 {
+    // AcceptEx로 생성된 socket이 listen socket의 context를 상속하도록 설정한다.
     return setsockopt(acceptSocket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, reinterpret_cast<const char*>(&listenSocket), sizeof(listenSocket)) != SOCKET_ERROR;
 }
 

@@ -7,6 +7,8 @@
 
 class Session;
 
+// 활성 Session의 소유권을 보관한다.
+// socket이 닫힌 뒤에도 pending IOCP completion이 남아 있을 수 있으므로 CanDestroy()가 true가 된 객체만 제거한다.
 class SessionManager
 {
 public:

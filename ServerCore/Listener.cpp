@@ -50,6 +50,9 @@ bool Listener::PostAccept()
 
     DWORD bytes = 0;
 
+    // 최초 데이터 수신은 기다리지 않고 연결 수락만 완료 대상으로 삼는다.
+    // AcceptEx의 local/remote address 영역은 sockaddr 크기보다
+    // 각각 16바이트 이상 크게 확보해야 한다.
     BOOL result = _acceptEx(_listenSocket, _acceptEvent.acceptSocket, _acceptEvent.buffer, 0, sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16, &bytes, &_acceptEvent.overlapped);
 
     if (result == FALSE)
@@ -69,11 +72,11 @@ bool Listener::PostAccept()
 
 void Listener::Close()
 {
-    // Listener가 소유한 listen socket 해제
     SocketUtils::Close(_listenSocket);
     _acceptEx = nullptr;
 }
 
+// AcceptEx가 완료된 socket에 listen socket의 context를 반영
 bool Listener::CompleteAccept(AcceptEvent& event)
 {
     return SocketUtils::UpdateAcceptContext(event.acceptSocket, _listenSocket);

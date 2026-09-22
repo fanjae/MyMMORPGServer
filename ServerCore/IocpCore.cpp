@@ -24,7 +24,7 @@ bool IocpCore::Register(HANDLE handle, ULONG_PTR key)
 
 bool IocpCore::Post(ULONG_PTR key, DWORD bytes, OVERLAPPED* overlapped)
 {
-    // 실제 I/O 없이 테스트용 완료 패킷을 IOCP 큐에 직접 삽입
+    // 실제 I/O 완료와 무관한 사용자 정의 completion packet을 IOCP 큐에 삽입한다.
     return PostQueuedCompletionStatus(_iocpHandle, bytes, key, overlapped) != FALSE;
 }
 

@@ -50,6 +50,8 @@ bool Session::Send(const char* data, int32_t size)
     if (data == nullptr || size <= 0)
         return false;
 
+    // 비동기 Send가 완료될 때까지 전송 데이터가 유효해야 하므로
+    // 호출자가 넘긴 메모리를 직접 참조하지 않고 Session 소유 버퍼로 복사한다.
     SendBuffer sendBuffer;
     sendBuffer.buffer.assign(data, data + size);
 
@@ -151,6 +153,9 @@ bool Session::PostSend()
     _sendEvent.wsaBuf.buf = sendBuffer.buffer.data() + sendBuffer.sentBytes;
     _sendEvent.wsaBuf.len = static_cast<ULONG>(remainingBytes);
 
+    // 이전 Send에서 일부만 전송됐을 수 있으므로
+    // 아직 전송되지 않은 구간만 다음 WSASend에 넘김.
+
     DWORD sentBytes = 0;
     int32_t result = WSASend(_socket, &_sendEvent.wsaBuf, 1, &sentBytes, 0, &_sendEvent.overlapped, nullptr);
 
@@ -158,7 +163,8 @@ bool Session::PostSend()
     {
         int32_t error = WSAGetLastError();
 
-        // 비동기 Send 요청이 정상적으로 대기 상태에 들어간 경우
+        // WSA_IO_PENDING은 실패가 아니라 overlapped Recv가 정상적으로 등록되어
+        // 이후 IOCP completion으로 완료될 예정이라는 의미
         if (error != WSA_IO_PENDING)
             return false;
     }
@@ -197,6 +203,9 @@ bool Session::OnSend(DWORD bytes)
     return true;
 }
 
+// TCP는 애플리케이션 패킷 경계를 보존하지 않는다.
+// 한 번의 Recv에 패킷 일부 또는 여러 패킷이 포함될 수 있으므로,
+// PacketHeader::size만큼 데이터가 누적된 경우에만 하나의 패킷을 처리한다.
 bool Session::ProcessPackets()
 {
     while (true)
