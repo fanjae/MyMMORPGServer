@@ -14,6 +14,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Protocol", "Protocol", "{C8
 		Protocol\ServerPacket.h = Protocol\ServerPacket.h
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestClient", "TestClient\TestClient.vcxproj", "{5DDD0A65-79D8-479E-B1EF-7CBED1108932}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -46,6 +48,14 @@ Global
 		{A11B3318-FE02-4DAD-BE6E-8B8EDA8FDFEE}.Release|x64.Build.0 = Release|x64
 		{A11B3318-FE02-4DAD-BE6E-8B8EDA8FDFEE}.Release|x86.ActiveCfg = Release|Win32
 		{A11B3318-FE02-4DAD-BE6E-8B8EDA8FDFEE}.Release|x86.Build.0 = Release|Win32
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Debug|x64.ActiveCfg = Debug|x64
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Debug|x64.Build.0 = Debug|x64
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Debug|x86.ActiveCfg = Debug|Win32
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Debug|x86.Build.0 = Debug|Win32
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Release|x64.ActiveCfg = Release|x64
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Release|x64.Build.0 = Release|x64
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Release|x86.ActiveCfg = Release|Win32
+		{5DDD0A65-79D8-479E-B1EF-7CBED1108932}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
