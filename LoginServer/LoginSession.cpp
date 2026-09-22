@@ -1,9 +1,11 @@
-﻿#include "AuthKeyGenerator.h"
+﻿#include "AccountRepository.h"
+#include "AuthKeyGenerator.h"
+#include "CharacterRepository.h"
 #include "GameServerClient.h"
 #include "LoginSession.h"
 #include "LoginPacketHandler.h"
 
-LoginSession::LoginSession(SOCKET socket, GameServerClient& gameServerClient, AuthKeyGenerator& authKeyGenerator) : Session(socket), _gameServerClient(gameServerClient), _authKeyGenerator(authKeyGenerator)
+LoginSession::LoginSession(SOCKET socket, GameServerClient& gameServerClient, AuthKeyGenerator& authKeyGenerator, AccountRepository& accountRepository, CharacterRepository& characterRepository) : Session(socket), _gameServerClient(gameServerClient), _authKeyGenerator(authKeyGenerator), _accountRepository(accountRepository), _characterRepository(characterRepository)
 {
 }
 

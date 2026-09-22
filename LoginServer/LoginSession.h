@@ -2,13 +2,15 @@
 
 #include "../ServerCore/Session.h"
 
+class AccountRepository;
 class AuthKeyGenerator;
+class CharacterRepository;
 class GameServerClient;
 
 class LoginSession : public Session
 {
 public:
-    LoginSession(SOCKET socket, GameServerClient& gameServerClient, AuthKeyGenerator& authKeyGenerator);
+    LoginSession(SOCKET socket, GameServerClient& gameServerClient, AuthKeyGenerator& authKeyGenerator, AccountRepository& accountRepository, CharacterRepository& characterRepository);
 
     bool IsAuthenticated() const { return _authenticated; }
     void SetAuthenticated(bool authenticated) { _authenticated = authenticated; }
@@ -18,6 +20,8 @@ public:
 
     GameServerClient& GetGameServerClient() { return _gameServerClient; }
     AuthKeyGenerator& GetAuthKeyGenerator() { return _authKeyGenerator; }
+    AccountRepository& GetAccountRepository() { return _accountRepository; }
+    CharacterRepository& GetCharacterRepository() { return _characterRepository; }
 
 protected:
     bool OnPacket(uint16_t opcode, const char* payload, uint16_t payloadSize) override;
@@ -25,6 +29,8 @@ protected:
 private:
     GameServerClient& _gameServerClient;
     AuthKeyGenerator& _authKeyGenerator;
+    AccountRepository& _accountRepository;
+    CharacterRepository& _characterRepository;
     uint32_t _accountId = 0;
     bool _authenticated = false;
 };

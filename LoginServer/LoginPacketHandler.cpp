@@ -1,46 +1,15 @@
-﻿#include "AuthKeyGenerator.h"
+﻿#include "AccountRepository.h"
+#include "AuthKeyGenerator.h"
+#include "CharacterRepository.h"
 #include "GameServerClient.h"
 #include "LoginPacketHandler.h"
 #include "LoginPacket.h"
 #include "LoginSession.h"
 #include "../ServerCore/Packet.h"
 
-#include <array>
+#include <algorithm>
 #include <cstring>
-
-namespace
-{
-    std::array<CharacterInfo, 2> CreateCharacters()
-    {
-        std::array<CharacterInfo, 2> characters{};
-
-        characters[0].characterId = 1001;
-        memcpy(characters[0].name, "Warrior", strlen("Warrior"));
-        characters[0].level = 10;
-
-        characters[1].characterId = 1002;
-        memcpy(characters[1].name, "Magician", strlen("Magician"));
-        characters[1].level = 15;
-
-        return characters;
-    }
-
-    const std::array<CharacterInfo, 2> characters = CreateCharacters();
-
-    bool IsValidCharacter(uint32_t accountId, uint32_t characterId)
-    {
-        if (accountId != 1)
-            return false;
-
-        for (const CharacterInfo& character : characters)
-        {
-            if (character.characterId == characterId)
-                return true;
-        }
-
-        return false;
-    }
-}
+#include <vector>
 
 bool LoginPacketHandler::Handle(LoginSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
@@ -70,7 +39,7 @@ bool LoginPacketHandler::HandleLogin(LoginSession& session, const char* payload,
 
     LoginResponse response;
 
-    if (request.accountId != 1)
+    if (!session.GetAccountRepository().ExistsById(request.accountId))
     {
         response.result = LoginResult::InvalidAccount;
     }
@@ -101,10 +70,12 @@ bool LoginPacketHandler::HandleCharacterList(LoginSession& session, const char* 
     if (!session.IsAuthenticated())
         return false;
 
-    CharacterListResponse response;
-    response.characterCount = static_cast<uint8_t>(characters.size());
+    const std::vector<CharacterInfo> characters = session.GetCharacterRepository().FindByAccountId(session.GetAccountId());
 
-    for (size_t i = 0; i < characters.size(); ++i)
+    CharacterListResponse response;
+    response.characterCount = static_cast<uint8_t>((std::min)(characters.size(), static_cast<size_t>(MAX_CHARACTER_COUNT)));
+
+    for (size_t i = 0; i < response.characterCount; ++i)
         response.characters[i] = characters[i];
 
     PacketHeader header;
@@ -132,7 +103,7 @@ bool LoginPacketHandler::HandleCharacterSelect(LoginSession& session, const char
 
     CharacterSelectResponse response;
 
-    if (!IsValidCharacter(session.GetAccountId(), request.characterId))
+    if (!session.GetCharacterRepository().ExistsByAccountIdAndCharacterId(session.GetAccountId(), request.characterId))
     {
         response.result = CharacterSelectResult::InvalidCharacter;
     }

@@ -5,14 +5,55 @@
 #include "../ServerCore/IocpWorker.h"
 #include "../ServerCore/SessionManager.h"
 
+#include "AccountRepository.h"
 #include "AuthKeyGenerator.h"
+#include "CharacterRepository.h"
+#include "DatabaseConnection.h"
 #include "GameServerClient.h"
 #include "LoginSession.h"
 
+#include <cstdlib>
 #include <iostream>
+
+namespace
+{
+    const char* GetEnvironmentVariable(const char* name)
+    {
+        const char* value = std::getenv(name);
+
+        if (value == nullptr || value[0] == '\0')
+        {
+            std::cerr << "Environment variable is missing: " << name << '\n';
+            return nullptr;
+        }
+
+        return value;
+    }
+}
 
 int main()
 {
+    const char* dbHost = GetEnvironmentVariable("DB_HOST");
+    const char* dbUser = GetEnvironmentVariable("DB_USER");
+    const char* dbPassword = GetEnvironmentVariable("DB_PASSWORD");
+    const char* dbName = GetEnvironmentVariable("DB_NAME");
+
+    if (dbHost == nullptr || dbUser == nullptr || dbPassword == nullptr || dbName == nullptr)
+        return 1;
+
+    DatabaseConnection database;
+
+    if (!database.Connect(dbHost, dbUser, dbPassword, dbName))
+        return 1;
+
+    if (!database.TestConnection())
+        return 1;
+
+    std::cout << "Database Connected\n";
+
+    AccountRepository accountRepository(*database.GetConnection());
+    CharacterRepository characterRepository(*database.GetConnection());
+
     if (!SocketUtils::Init())
         return 1;
 
@@ -52,9 +93,9 @@ int main()
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(listener,
-        [&gameServerClient, &authKeyGenerator](SOCKET socket)
+        [&gameServerClient, &authKeyGenerator, &accountRepository, &characterRepository](SOCKET socket)
         {
-            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator);
+            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator, accountRepository, characterRepository);
         });
 
     std::cout << "Login Server Started\n";
