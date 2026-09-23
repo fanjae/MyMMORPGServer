@@ -1,7 +1,7 @@
 ﻿#include "AuthTicketManager.h"
 #include "GamePacketHandler.h"
-#include "GamePacket.h"
 #include "GameSession.h"
+#include "../Protocol/GamePacket.h"
 #include "../ServerCore/Packet.h"
 
 #include <cstring>

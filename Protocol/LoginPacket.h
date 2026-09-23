@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+constexpr uint32_t MAX_LOGIN_ID_LENGTH = 32;
+constexpr uint32_t MAX_PASSWORD_LENGTH = 64;
+
 constexpr uint32_t MAX_CHARACTER_NAME_LENGTH = 16;
 constexpr uint32_t MAX_CHARACTER_COUNT = 3;
 
@@ -18,7 +21,14 @@ enum class LoginPacketOpcode : uint16_t
 enum class LoginResult : uint8_t
 {
     Success = 0,
-    InvalidAccount = 1
+    InvalidCredential = 1,
+    ServerError = 2
+};
+
+enum class CharacterListResult : uint8_t
+{
+    Success = 0,
+    ServerError = 1
 };
 
 enum class CharacterSelectResult : uint8_t
@@ -32,12 +42,13 @@ enum class CharacterSelectResult : uint8_t
 
 struct LoginRequest
 {
-    uint32_t accountId = 0;
+    char loginId[MAX_LOGIN_ID_LENGTH] = {};
+    char password[MAX_PASSWORD_LENGTH] = {};
 };
 
 struct LoginResponse
 {
-    LoginResult result = LoginResult::InvalidAccount;
+    LoginResult result = LoginResult::InvalidCredential;
 };
 
 struct CharacterInfo
@@ -49,6 +60,7 @@ struct CharacterInfo
 
 struct CharacterListResponse
 {
+    CharacterListResult result = CharacterListResult::ServerError;
     uint8_t characterCount = 0;
     CharacterInfo characters[MAX_CHARACTER_COUNT] = {};
 };
