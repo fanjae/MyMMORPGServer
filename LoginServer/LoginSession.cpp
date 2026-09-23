@@ -4,8 +4,9 @@
 #include "GameServerClient.h"
 #include "LoginSession.h"
 #include "LoginPacketHandler.h"
+#include "PasswordVerifier.h"
 
-LoginSession::LoginSession(SOCKET socket, GameServerClient& gameServerClient, AuthKeyGenerator& authKeyGenerator, AccountRepository& accountRepository, CharacterRepository& characterRepository) : Session(socket), _gameServerClient(gameServerClient), _authKeyGenerator(authKeyGenerator), _accountRepository(accountRepository), _characterRepository(characterRepository)
+LoginSession::LoginSession(SOCKET socket, GameServerClient& gameServerClient, AuthKeyGenerator& authKeyGenerator, AccountRepository& accountRepository, CharacterRepository& characterRepository, PasswordVerifier& passwordVerifier) : Session(socket), _gameServerClient(gameServerClient), _authKeyGenerator(authKeyGenerator), _accountRepository(accountRepository), _characterRepository(characterRepository), _passwordVerifier(passwordVerifier)
 {
 }
 

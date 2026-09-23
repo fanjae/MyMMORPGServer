@@ -11,34 +11,40 @@
 #include "DatabaseConnection.h"
 #include "GameServerClient.h"
 #include "LoginSession.h"
+#include "PasswordVerifier.h"
 
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 namespace
 {
-    const char* GetEnvironmentVariable(const char* name)
+    std::string GetEnvironmentVariable(const char* name)
     {
-        const char* value = std::getenv(name);
+        char* value = nullptr;
+        size_t length = 0;
 
-        if (value == nullptr || value[0] == '\0')
+        if (_dupenv_s(&value, &length, name) != 0 || value == nullptr)
         {
             std::cerr << "Environment variable is missing: " << name << '\n';
-            return nullptr;
+            return {};
         }
 
-        return value;
+        std::string result(value);
+        free(value);
+
+        return result;
     }
 }
 
 int main()
 {
-    const char* dbHost = GetEnvironmentVariable("DB_HOST");
-    const char* dbUser = GetEnvironmentVariable("DB_USER");
-    const char* dbPassword = GetEnvironmentVariable("DB_PASSWORD");
-    const char* dbName = GetEnvironmentVariable("DB_NAME");
+    const std::string dbHost = GetEnvironmentVariable("DB_HOST");
+    const std::string dbUser = GetEnvironmentVariable("DB_USER");
+    const std::string dbPassword = GetEnvironmentVariable("DB_PASSWORD");
+    const std::string dbName = GetEnvironmentVariable("DB_NAME");
 
-    if (dbHost == nullptr || dbUser == nullptr || dbPassword == nullptr || dbName == nullptr)
+    if (dbHost.empty() || dbUser.empty() || dbPassword.empty() || dbName.empty())
         return 1;
 
     DatabaseConnection database;
@@ -53,11 +59,13 @@ int main()
 
     AccountRepository accountRepository(*database.GetConnection());
     CharacterRepository characterRepository(*database.GetConnection());
+    PasswordVerifier passwordVerifier;
 
     if (!SocketUtils::Init())
         return 1;
 
     IocpCore iocp;
+
     if (!iocp.IsValid())
     {
         SocketUtils::Clear();
@@ -93,9 +101,9 @@ int main()
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(listener,
-        [&gameServerClient, &authKeyGenerator, &accountRepository, &characterRepository](SOCKET socket)
+        [&gameServerClient, &authKeyGenerator, &accountRepository, &characterRepository, &passwordVerifier](SOCKET socket)
         {
-            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator, accountRepository, characterRepository);
+            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator, accountRepository, characterRepository, passwordVerifier);
         });
 
     std::cout << "Login Server Started\n";

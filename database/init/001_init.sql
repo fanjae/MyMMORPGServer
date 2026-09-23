@@ -1,7 +1,11 @@
 CREATE TABLE accounts
 (
     id INT UNSIGNED NOT NULL,
-    PRIMARY KEY (id)
+    login_id VARCHAR(32) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_accounts_login_id (login_id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE characters
@@ -20,8 +24,13 @@ CREATE TABLE characters
         ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-INSERT INTO accounts (id)
-VALUES (1);
+INSERT INTO accounts (id, login_id, password_hash)
+VALUES
+(
+    1,
+    'test',
+    'pbkdf2-sha256$600000$00112233445566778899aabbccddeeff$789a95f0eed0a9ceb639c5d039f1f891aa0b4fe415b7780752e57db5c3c1860d'
+);
 
 INSERT INTO characters (id, account_id, name, level)
 VALUES
