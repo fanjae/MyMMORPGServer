@@ -18,11 +18,6 @@ struct IocpEvent
     OVERLAPPED overlapped = {};
     IocpEventType type = IocpEventType::None;
 };
-struct IocpEvent
-{
-    OVERLAPPED overlapped = {};
-    IocpEventType type = IocpEventType::None;
-};
 
 // 하나의 AcceptEx 요청에 필요한 상태를 보관한다.
 // acceptSocket과 OVERLAPPED는 Accept 완료 전까지 유지되어야 한다.
