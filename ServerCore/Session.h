@@ -34,6 +34,10 @@ public:
 protected:
     virtual bool OnPacket(uint16_t opcode, const char* payload, uint16_t payloadSize) = 0;
 
+    // 논리적인 연결 종료 시 파생 Session이 게임 로직 정리를 수행하기 위한 hook.
+    // 실제 Session 객체 수명은 pending I/O completion이 모두 회수될 때까지 유지
+    virtual void OnDisconnected() {}
+
 private:
 
     // 하나의 논리적 Send 요청에서 아직 완료되지 않은 전송 상태.
@@ -55,4 +59,5 @@ private:
     std::queue<SendBuffer> _sendQueue;
     bool _recvPending = false;
     bool _sendPending = false;
+    bool _disconnectHandled = false;
 };

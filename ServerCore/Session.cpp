@@ -16,6 +16,14 @@ Session::~Session()
 
 void Session::Close()
 {
+    // socket 종료보다 먼저 논리적인 disconnect 처리를 수행한다.
+    // 실제 객체 파괴는 pending I/O completion 회수 후 SessionManager가 담당한다.
+    if (!_disconnectHandled)
+    {
+        _disconnectHandled = true;
+        OnDisconnected();
+    }
+
     SocketUtils::Close(_socket);
 }
 
