@@ -8,6 +8,9 @@ class CharacterRepository;
 class GameServerClient;
 class PasswordVerifier;
 
+// 로그인 연결 하나의 인증 상태를 보관한다.
+// 외부 서비스/Repository는 소유하지 않고 reference로 참조하므로
+// LoginSession보다 오래 유지되어야 한다.
 class LoginSession : public Session
 {
 public:

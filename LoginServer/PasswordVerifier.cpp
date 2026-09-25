@@ -12,6 +12,7 @@
 
 namespace
 {
+    // DB password_hash 형식은 pbkdf2-sha256 형태.
     constexpr uint32_t PBKDF2_HASH_SIZE = 32;
     constexpr const char* PBKDF2_ALGORITHM = "pbkdf2-sha256";
 
@@ -63,6 +64,7 @@ namespace
         return true;
     }
 
+    // 해시 내용에 따라 비교가 중간에 종료되지 않도록 모든 바이트를 비교
     bool ConstantTimeEquals(const std::vector<uint8_t>& lhs, const std::vector<uint8_t>& rhs)
     {
         if (lhs.size() != rhs.size())
@@ -76,6 +78,7 @@ namespace
         return difference == 0;
     }
 
+    // 저장된 password_hash를 검증하면서 PBKDF2 파라미터와 salt/hash를 추출
     bool ParseIterations(const std::string& text, uint64_t& iterations)
     {
         if (text.empty())
@@ -141,6 +144,7 @@ namespace
     }
 }
 
+// PBKDF2-HMAC-SHA256 계산에 사용할 SHA-256 HMAC provider를 연다.
 bool PasswordVerifier::Verify(const std::string& password, const std::string& passwordHash) const
 {
     if (password.empty() || passwordHash.empty())

@@ -42,6 +42,7 @@ bool LoginPacketHandler::HandleLogin(LoginSession& session, const char* payload,
 
     LoginResponse response;
 
+    // wire packet의 고정 길이 문자열이 범위 안에서 null-terminate 되었는지 검증한다.
     const size_t loginIdLength = strnlen_s(request.loginId, MAX_LOGIN_ID_LENGTH);
     const size_t passwordLength = strnlen_s(request.password, MAX_PASSWORD_LENGTH);
 
@@ -109,6 +110,7 @@ bool LoginPacketHandler::HandleCharacterList(LoginSession& session, const char* 
     }
     else
     {
+        // wire protocol의 고정 배열 크기를 초과하는 캐릭터는 응답에 포함하지 않는다.
         response.result = CharacterListResult::Success;
         response.characterCount = static_cast<uint8_t>((std::min)(queryResult.characters.size(), static_cast<size_t>(MAX_CHARACTER_COUNT)));
 
@@ -154,6 +156,9 @@ bool LoginPacketHandler::HandleCharacterSelect(LoginSession& session, const char
     else
     {
         uint64_t authKey = 0;
+
+        // 선택된 캐릭터의 소유권을 확인한 뒤 일회용 authKey를 발급한다.
+        // 같은 티켓을 GameServer에 먼저 등록한 뒤 클라이언트에 전달해야 클라이언트가 GameServer 접속 즉시 인증할 수 있다.
 
         if (!session.GetAuthKeyGenerator().Generate(authKey))
             return false;

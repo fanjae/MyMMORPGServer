@@ -24,6 +24,8 @@ int main()
         return 1;
     }
 
+    // 7777: LoginServer에서 authKey를 받은 게임 클라이언트가 접속하는 포트.
+    // 7778: LoginServer가 게임 입장용 인증 티켓을 등록하는 서버 간 통신 포트.
     NetAddress gameAddress(L"127.0.0.1", 7777);
     NetAddress serverAddress(L"127.0.0.1", 7778);
 
@@ -96,6 +98,8 @@ int main()
 
     while (true)
     {
+        // 네트워크 이벤트가 없어도 주기적으로 만료 티켓을 정리해야 하므로
+        // IOCP를 무한 대기하지 않고 1초 timeout으로 dispatch
         if (!worker.Dispatch(1000))
         {
             gameListener.Close();

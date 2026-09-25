@@ -15,11 +15,7 @@ AccountQueryResult AccountRepository::FindByLoginId(const std::string& loginId)
 
     try
     {
-        std::unique_ptr<sql::PreparedStatement> statement(_connection.prepareStatement(
-            "SELECT id, password_hash "
-            "FROM accounts "
-            "WHERE login_id = ? "
-            "LIMIT 1"));
+        std::unique_ptr<sql::PreparedStatement> statement(_connection.prepareStatement("SELECT id, password_hash " "FROM accounts " "WHERE login_id = ? " "LIMIT 1"));
 
         statement->setString(1, loginId);
 

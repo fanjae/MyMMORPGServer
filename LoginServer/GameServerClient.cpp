@@ -26,6 +26,8 @@ namespace
     }
 }
 
+// GameServer에 일회용 인증 티켓을 등록하고 등록 결과를 동기적으로 확인한다.
+// 등록 성공 이후에만 LoginServer가 같은 authKey를 클라이언트에 전달한다.
 bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint32_t characterId, uint64_t authKey)
 {
     SOCKET socket = SocketUtils::CreateSocket();

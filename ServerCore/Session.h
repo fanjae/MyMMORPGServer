@@ -59,5 +59,5 @@ private:
     std::queue<SendBuffer> _sendQueue;
     bool _recvPending = false;
     bool _sendPending = false;
-    bool _disconnectHandled = false;
+    bool _disconnectHandled = false; 
 };

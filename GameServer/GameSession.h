@@ -4,6 +4,8 @@
 
 class AuthTicketManager;
 
+// 게임 클라이언트와의 연결을 나타내며 인증 완료 후 account/character 식별자를 보관
+// AuthTicketManager는 소유하지 않고 참조하므로 GameSession보다 오래 유지
 class GameSession : public Session
 {
 public:

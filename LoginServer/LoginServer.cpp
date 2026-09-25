@@ -57,6 +57,9 @@ int main()
 
     std::cout << "Database Connected\n";
 
+    // Repository는 DatabaseConnection이 소유한 단일 Connection을 참조하므로, 
+    // DatabaseConnection이 모든 Repository와 LoginSession보다 오래 유지되어야 한다.
+
     AccountRepository accountRepository(*database.GetConnection());
     CharacterRepository characterRepository(*database.GetConnection());
     PasswordVerifier passwordVerifier;
@@ -100,6 +103,8 @@ int main()
     AuthKeyGenerator authKeyGenerator;
     IocpWorker worker(iocp, sessionManager);
 
+    // LoginSession은 공용 서비스와 Repository를 소유하지 않고 reference로 공유한다.
+    // 캡처된 객체들은 main scope에서 Session보다 오래 유지된다.
     worker.RegisterListener(listener,
         [&gameServerClient, &authKeyGenerator, &accountRepository, &characterRepository, &passwordVerifier](SOCKET socket)
         {

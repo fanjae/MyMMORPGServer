@@ -34,6 +34,9 @@ CharacterListQueryResult CharacterRepository::FindByAccountId(uint32_t accountId
 
             character.characterId = result->getUInt("id");
 
+            // 프로토콜의 고정 길이 name 버퍼에 맞춰 마지막 null 문자를 위한
+            // 1바이트를 남기고 복사한다. CharacterInfo가 zero-initialize되어 있으므로
+            // 복사되지 않은 나머지 영역은 null로 유지된다.
             const std::string name = result->getString("name");
             const size_t copyLength = (std::min)(name.size(), static_cast<size_t>(MAX_CHARACTER_NAME_LENGTH - 1));
             memcpy(character.name, name.data(), copyLength);

@@ -17,6 +17,8 @@ struct CharacterListQueryResult
     std::vector<CharacterInfo> characters;
 };
 
+// 캐릭터 조회를 담당하는 Repository.
+// DB Connection을 소유하지 않으므로 Repository보다 Connection이 오래 유지 필요
 class CharacterRepository
 {
 public:

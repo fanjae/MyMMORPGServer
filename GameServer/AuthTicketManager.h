@@ -12,6 +12,8 @@ struct AuthTicket
     std::chrono::steady_clock::time_point expiresAt;
 };
 
+// LoginServer가 발급한 게임 입장용 인증 티켓을 임시 보관한다.
+// 티켓은 제한된 유효 시간을 가지며, 인증에 성공하면 한 번만 소비된다.
 class AuthTicketManager
 {
 public:

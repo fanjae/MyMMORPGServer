@@ -37,6 +37,9 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
     {
         AuthTicket ticket;
 
+        // LoginServer가 선등록한 일회용 authKey를 소비
+        // 인증에 성공하면 클라이언트가 보낸 식별자가 아닌
+        // 서버가 보관한 티켓의 accountId/characterId를 Session에 바인딩
         if (!session.GetAuthTicketManager().Consume(request.authKey, ticket))
         {
             response.result = EnterGameResult::InvalidAuthKey;

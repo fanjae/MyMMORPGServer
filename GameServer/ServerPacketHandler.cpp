@@ -19,6 +19,8 @@ bool ServerPacketHandler::Handle(ServerSession& session, uint16_t opcode, const 
     }
 }
 
+// LoginServer가 발급한 게임 입장용 일회성 티켓을 GameServer에 선등록
+// 동일 authKey가 이미 존재하면 중복 등록으로 간주해 실패 처리
 bool ServerPacketHandler::HandleRegisterAuthTicket(ServerSession& session, const char* payload, uint16_t payloadSize)
 {
     if (payloadSize != sizeof(RegisterAuthTicketRequest))
