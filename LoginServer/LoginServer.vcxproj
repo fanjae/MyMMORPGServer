@@ -140,7 +140,6 @@
     <ClCompile Include="AccountRepository.cpp" />
     <ClCompile Include="AuthKeyGenerator.cpp" />
     <ClCompile Include="CharacterRepository.cpp" />
-    <ClCompile Include="DatabaseConnection.cpp" />
     <ClCompile Include="GameServerClient.cpp" />
     <ClCompile Include="LoginPacketHandler.cpp" />
     <ClCompile Include="LoginServer.cpp" />
@@ -151,7 +150,6 @@
     <ClInclude Include="AccountRepository.h" />
     <ClInclude Include="AuthKeyGenerator.h" />
     <ClInclude Include="CharacterRepository.h" />
-    <ClInclude Include="DatabaseConnection.h" />
     <ClInclude Include="GameServerClient.h" />
     <ClInclude Include="LoginPacketHandler.h" />
     <ClInclude Include="LoginSession.h" />

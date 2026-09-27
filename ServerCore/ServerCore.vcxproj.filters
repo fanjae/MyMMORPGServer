@@ -48,6 +48,9 @@
     <ClInclude Include="SessionManager.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="DatabaseConnection.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -75,6 +78,9 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="SessionManager.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="DatabaseConnection.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

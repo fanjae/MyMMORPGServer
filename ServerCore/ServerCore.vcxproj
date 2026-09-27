@@ -117,6 +117,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\Program Files\MySQL\MySQL Connector C++ 26.7\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -135,6 +136,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\Program Files\MySQL\MySQL Connector C++ 26.7\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -143,6 +145,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="DatabaseConnection.h" />
     <ClInclude Include="IocpCore.h" />
     <ClInclude Include="IocpEvent.h" />
     <ClInclude Include="IocpWorker.h" />
@@ -156,6 +159,7 @@
     <ClInclude Include="SocketUtils.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="DatabaseConnection.cpp" />
     <ClCompile Include="IocpCore.cpp" />
     <ClCompile Include="IocpWorker.cpp" />
     <ClCompile Include="Listener.cpp" />

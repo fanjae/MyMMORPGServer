@@ -1,6 +1,5 @@
-﻿#include "DatabaseConnection.h"
-
-#include <mysql/jdbc.h>
+﻿#include "pch.h"
+#include "DatabaseConnection.h"
 
 #include <iostream>
 #include <memory>
@@ -65,6 +64,7 @@ void DatabaseConnection::Disconnect()
 
     _connection.reset();
 }
+
 sql::Connection* DatabaseConnection::GetConnection()
 {
     return _connection.get();

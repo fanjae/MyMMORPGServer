@@ -8,7 +8,7 @@
 #include "AccountRepository.h"
 #include "AuthKeyGenerator.h"
 #include "CharacterRepository.h"
-#include "DatabaseConnection.h"
+#include "../ServerCore/DatabaseConnection.h"
 #include "GameServerClient.h"
 #include "LoginSession.h"
 #include "PasswordVerifier.h"

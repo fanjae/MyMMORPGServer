@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+
 class DatabaseConnection
 {
 public:
