@@ -191,7 +191,15 @@ int main()
     }
 
     CharacterSelectRequest characterSelectRequest;
-    characterSelectRequest.characterId = 1001;
+    characterSelectRequest.characterId = characterListResponse.characters[0].characterId;
+
+    if (characterListResponse.characterCount == 0)
+    {
+        std::cout << "No Character Available\n";
+        closesocket(loginSocket);
+        WSACleanup();
+        return 1;
+    }
 
     if (!SendPacket(loginSocket, LoginPacketOpcode::CharacterSelectRequest, characterSelectRequest))
     {
@@ -284,7 +292,22 @@ int main()
         return 1;
     }
 
+    std::cout << "Entered CharacterId: " << enterGameResponse.characterId << '\n';
+    std::cout << "Entered CharacterName: " << enterGameResponse.name << '\n';
+    std::cout << "Entered CharacterLevel: " << enterGameResponse.level << '\n';
+
+    if (enterGameResponse.characterId != characterSelectRequest.characterId)
+    {
+        std::cout << "Entered CharacterId Mismatch\n";
+        closesocket(gameSocket);
+        WSACleanup();
+        return 1;
+    }
+
     closesocket(gameSocket);
     WSACleanup();
+
+    std::cout << "Login -> Character Select -> Game Enter Test Succeeded\n";
+
     return 0;
 }
