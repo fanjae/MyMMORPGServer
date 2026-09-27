@@ -2,14 +2,19 @@
 
 #include "../ServerCore/Session.h"
 
-class AuthTicketManager;
+#include <memory>
 
-// 게임 클라이언트와의 연결을 나타내며 인증 완료 후 account/character 식별자를 보관
-// AuthTicketManager는 소유하지 않고 참조하므로 GameSession보다 오래 유지
+class AuthTicketManager;
+class CharacterRepository;
+class Player;
+
+// 게임 클라이언트와의 연결을 나타내며 인증 완료 후 Player를 소유
+// AuthTicketManager와 CharacterRepository는 소유하지 않고 참조하므로 GameSession보다 오래 유지 필요
 class GameSession : public Session
 {
 public:
-    GameSession(SOCKET socket, AuthTicketManager& authTicketManager);
+    GameSession(SOCKET socket, AuthTicketManager& authTicketManager, CharacterRepository& characterRepository);
+    ~GameSession() override;
 
     bool IsAuthenticated() const { return _authenticated; }
     void SetAuthenticated(bool authenticated) { _authenticated = authenticated; }
@@ -21,6 +26,10 @@ public:
     void SetCharacterId(uint32_t characterId) { _characterId = characterId; }
 
     AuthTicketManager& GetAuthTicketManager() { return _authTicketManager; }
+    CharacterRepository& GetCharacterRepository() { return _characterRepository; }
+
+    Player* GetPlayer() const { return _player.get(); }
+    void SetPlayer(std::unique_ptr<Player> player);
 
 protected:
     bool OnPacket(uint16_t opcode, const char* payload, uint16_t payloadSize) override;
@@ -28,6 +37,9 @@ protected:
 
 private:
     AuthTicketManager& _authTicketManager;
+    CharacterRepository& _characterRepository;
+    std::unique_ptr<Player> _player;
+
     uint32_t _accountId = 0;
     uint32_t _characterId = 0;
     bool _authenticated = false;

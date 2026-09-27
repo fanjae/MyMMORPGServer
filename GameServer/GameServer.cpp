@@ -6,14 +6,54 @@
 #include "../ServerCore/IocpEvent.h"
 #include "../ServerCore/IocpWorker.h"
 #include "../ServerCore/SessionManager.h"
+#include "../ServerCore/DatabaseConnection.h"
 #include "AuthTicketManager.h"
+#include "CharacterRepository.h"
 #include "GameSession.h"
 #include "ServerSession.h"
 
+#include <cstdlib>
 #include <iostream>
+#include <string>
+
+namespace
+{
+    std::string GetEnvironmentVariable(const char* name)
+    {
+        char* value = nullptr;
+        size_t length = 0;
+
+        if (_dupenv_s(&value, &length, name) != 0 || value == nullptr)
+        {
+            std::cerr << "Environment variable is missing: " << name << '\n';
+            return {};
+        }
+
+        std::string result(value);
+        free(value);
+        return result;
+    }
+}
 
 int main()
 {
+    const std::string dbHost = GetEnvironmentVariable("DB_HOST");
+    const std::string dbUser = GetEnvironmentVariable("DB_USER");
+    const std::string dbPassword = GetEnvironmentVariable("DB_PASSWORD");
+    const std::string dbName = GetEnvironmentVariable("DB_NAME");
+
+    if (dbHost.empty() || dbUser.empty() || dbPassword.empty() || dbName.empty())
+        return 1;
+
+    DatabaseConnection database;
+    if (!database.Connect(dbHost, dbUser, dbPassword, dbName))
+        return 1;
+
+    if (!database.TestConnection())
+        return 1;
+
+    CharacterRepository characterRepository(*database.GetConnection());
+
     if (!SocketUtils::Init())
         return 1;
 
@@ -83,9 +123,9 @@ int main()
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(gameListener,
-        [&authTicketManager](SOCKET socket)
+        [&authTicketManager, &characterRepository](SOCKET socket)
         {
-            return std::make_unique<GameSession>(socket, authTicketManager);
+            return std::make_unique<GameSession>(socket, authTicketManager, characterRepository);
         });
 
     worker.RegisterListener(serverListener,

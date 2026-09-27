@@ -13,7 +13,7 @@ class Session
 {
 public:
     explicit Session(SOCKET socket);
-    ~Session();
+    virtual ~Session();
 
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;

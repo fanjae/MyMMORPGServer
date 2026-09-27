@@ -1,11 +1,15 @@
 ﻿#include "AuthTicketManager.h"
+#include "CharacterRepository.h"
 #include "GamePacketHandler.h"
 #include "GameSession.h"
+#include "Player.h"
 #include "../Protocol/GamePacket.h"
 #include "../ServerCore/Packet.h"
 
 #include <cstring>
 #include <iostream>
+#include <memory>
+#include <utility>
 
 bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
@@ -37,21 +41,55 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
     {
         AuthTicket ticket;
 
-        // LoginServer가 선등록한 일회용 authKey를 소비
-        // 인증에 성공하면 클라이언트가 보낸 식별자가 아닌
-        // 서버가 보관한 티켓의 accountId/characterId를 Session에 바인딩
+        // LoginServer가 등록한 일회용 인증 티켓을 소비한다.
+        // accountId와 characterId는 클라이언트가 아니라 인증된 티켓을 기준으로 사용한다.
         if (!session.GetAuthTicketManager().Consume(request.authKey, ticket))
         {
             response.result = EnterGameResult::InvalidAuthKey;
         }
         else
         {
-            session.SetAccountId(ticket.accountId);
-            session.SetCharacterId(ticket.characterId);
-            session.SetAuthenticated(true);
-            response.result = EnterGameResult::Success;
+            CharacterLoadResult loadResult = session.GetCharacterRepository().FindById(ticket.accountId, ticket.characterId);
 
-            std::cout << "Game Session Authenticated: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << "\n";
+            if (loadResult.status != CharacterLoadStatus::Success)
+            {
+                response.result = EnterGameResult::CharacterLoadFailed;
+
+                if (loadResult.status == CharacterLoadStatus::NotFound)
+                {
+                    std::cerr << "Character not found: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << '\n';
+                }
+                else
+                {
+                    std::cerr << "Character load failed: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << '\n';
+                }
+            }
+            else
+            {
+                CharacterData& character = loadResult.character;
+
+                auto player = std::make_unique<Player>(character.characterId, character.accountId, std::move(character.name), character.level);
+
+                session.SetAccountId(character.accountId);
+                session.SetCharacterId(character.characterId);
+                session.SetPlayer(std::move(player));
+                session.SetAuthenticated(true);
+
+                const Player* enteredPlayer = session.GetPlayer();
+
+                if (enteredPlayer == nullptr)
+                    return false;
+
+                response.result = EnterGameResult::Success;
+                response.characterId = enteredPlayer->GetCharacterId();
+                strcpy_s(response.name, enteredPlayer->GetName().c_str());
+                response.level = enteredPlayer->GetLevel();
+
+                std::cout << "Game Session Authenticated: accountId=" << enteredPlayer->GetAccountId()
+                    << " characterId=" << enteredPlayer->GetCharacterId()
+                    << " name=" << enteredPlayer->GetName()
+                    << " level=" << enteredPlayer->GetLevel() << '\n';
+            }
         }
     }
 
