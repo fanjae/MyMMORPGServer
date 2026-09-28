@@ -2,7 +2,10 @@
 #include "CharacterRepository.h"
 #include "GamePacketHandler.h"
 #include "GameSession.h"
+#include "Map.h"
+#include "MapManager.h"
 #include "Player.h"
+#include "PlayerManager.h"
 #include "../Protocol/GamePacket.h"
 #include "../ServerCore/Packet.h"
 
@@ -10,6 +13,11 @@
 #include <iostream>
 #include <memory>
 #include <utility>
+
+namespace
+{
+    constexpr uint32_t START_MAP_ID = 100000000;
+}
 
 bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
@@ -67,28 +75,52 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
             else
             {
                 CharacterData& character = loadResult.character;
-
                 auto player = std::make_unique<Player>(character.characterId, character.accountId, std::move(character.name), character.level);
 
-                session.SetAccountId(character.accountId);
-                session.SetCharacterId(character.characterId);
-                session.SetPlayer(std::move(player));
-                session.SetAuthenticated(true);
+                if (!session.GetPlayerManager().Add(*player))
+                {
+                    response.result = EnterGameResult::AlreadyInGame;
 
-                const Player* enteredPlayer = session.GetPlayer();
+                    std::cerr << "Player already in game: accountId=" << player->GetAccountId()
+                        << " characterId=" << player->GetCharacterId() << '\n';
+                }
+                else
+                {
+                    Map* map = session.GetMapManager().FindMap(START_MAP_ID);
 
-                if (enteredPlayer == nullptr)
-                    return false;
+                    if (map == nullptr || !map->AddPlayer(*player))
+                    {
+                        session.GetPlayerManager().Remove(*player);
+                        response.result = EnterGameResult::MapEnterFailed;
 
-                response.result = EnterGameResult::Success;
-                response.characterId = enteredPlayer->GetCharacterId();
-                strcpy_s(response.name, enteredPlayer->GetName().c_str());
-                response.level = enteredPlayer->GetLevel();
+                        std::cerr << "Player map enter failed: accountId=" << player->GetAccountId()
+                            << " characterId=" << player->GetCharacterId()
+                            << " mapId=" << START_MAP_ID << '\n';
+                    }
+                    else
+                    {
+                        session.SetAccountId(character.accountId);
+                        session.SetCharacterId(character.characterId);
+                        session.SetPlayer(std::move(player));
+                        session.SetAuthenticated(true);
 
-                std::cout << "Game Session Authenticated: accountId=" << enteredPlayer->GetAccountId()
-                    << " characterId=" << enteredPlayer->GetCharacterId()
-                    << " name=" << enteredPlayer->GetName()
-                    << " level=" << enteredPlayer->GetLevel() << '\n';
+                        const Player* enteredPlayer = session.GetPlayer();
+
+                        if (enteredPlayer == nullptr)
+                            return false;
+
+                        response.result = EnterGameResult::Success;
+                        response.characterId = enteredPlayer->GetCharacterId();
+                        strcpy_s(response.name, enteredPlayer->GetName().c_str());
+                        response.level = enteredPlayer->GetLevel();
+
+                        std::cout << "Game Session Authenticated: accountId=" << enteredPlayer->GetAccountId()
+                            << " characterId=" << enteredPlayer->GetCharacterId()
+                            << " name=" << enteredPlayer->GetName()
+                            << " level=" << enteredPlayer->GetLevel()
+                            << " mapId=" << enteredPlayer->GetMap()->GetMapId() << '\n';
+                    }
+                }
             }
         }
     }

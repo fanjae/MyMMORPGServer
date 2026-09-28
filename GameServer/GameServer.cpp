@@ -10,6 +10,8 @@
 #include "AuthTicketManager.h"
 #include "CharacterRepository.h"
 #include "GameSession.h"
+#include "MapManager.h"
+#include "PlayerManager.h"
 #include "ServerSession.h"
 
 #include <cstdlib>
@@ -119,13 +121,16 @@ int main()
 
     SessionManager sessionManager;
     AuthTicketManager authTicketManager;
+    PlayerManager playerManager;
+    MapManager mapManager;
+    mapManager.CreateMap(100000000);
 
     IocpWorker worker(iocp, sessionManager);
 
     worker.RegisterListener(gameListener,
-        [&authTicketManager, &characterRepository](SOCKET socket)
+        [&authTicketManager, &characterRepository, &playerManager, &mapManager](SOCKET socket)
         {
-            return std::make_unique<GameSession>(socket, authTicketManager, characterRepository);
+            return std::make_unique<GameSession>(socket, authTicketManager, characterRepository, playerManager, mapManager);
         });
 
     worker.RegisterListener(serverListener,

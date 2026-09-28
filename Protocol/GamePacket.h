@@ -15,7 +15,9 @@ enum class EnterGameResult : uint8_t
     Success = 0,
     InvalidAuthKey = 1,
     AlreadyAuthenticated = 2,
-    CharacterLoadFailed = 3
+    CharacterLoadFailed = 3,
+    AlreadyInGame = 4,
+    MapEnterFailed = 5
 };
 
 #pragma pack(push, 1)

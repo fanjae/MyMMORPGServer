@@ -6,14 +6,16 @@
 
 class AuthTicketManager;
 class CharacterRepository;
+class MapManager;
 class Player;
+class PlayerManager;
 
 // 게임 클라이언트와의 연결을 나타내며 인증 완료 후 Player를 소유
 // AuthTicketManager와 CharacterRepository는 소유하지 않고 참조하므로 GameSession보다 오래 유지 필요
 class GameSession : public Session
 {
 public:
-    GameSession(SOCKET socket, AuthTicketManager& authTicketManager, CharacterRepository& characterRepository);
+    GameSession(SOCKET socket, AuthTicketManager& authTicketManager, CharacterRepository& characterRepository, PlayerManager& playerManager, MapManager& mapManager);
     ~GameSession() override;
 
     bool IsAuthenticated() const { return _authenticated; }
@@ -27,6 +29,8 @@ public:
 
     AuthTicketManager& GetAuthTicketManager() { return _authTicketManager; }
     CharacterRepository& GetCharacterRepository() { return _characterRepository; }
+    PlayerManager& GetPlayerManager() { return _playerManager; }
+    MapManager& GetMapManager() { return _mapManager; }
 
     Player* GetPlayer() const { return _player.get(); }
     void SetPlayer(std::unique_ptr<Player> player);
@@ -38,6 +42,8 @@ protected:
 private:
     AuthTicketManager& _authTicketManager;
     CharacterRepository& _characterRepository;
+    PlayerManager& _playerManager;
+    MapManager& _mapManager;
     std::unique_ptr<Player> _player;
 
     uint32_t _accountId = 0;
