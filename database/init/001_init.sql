@@ -26,13 +26,11 @@ CREATE TABLE characters
 
 INSERT INTO accounts (id, login_id, password_hash)
 VALUES
-(
-    1,
-    'test',
-    'pbkdf2-sha256$600000$00112233445566778899aabbccddeeff$789a95f0eed0a9ceb639c5d039f1f891aa0b4fe415b7780752e57db5c3c1860d'
-);
+    (1, 'test', 'pbkdf2-sha256$600000$00112233445566778899aabbccddeeff$789a95f0eed0a9ceb639c5d039f1f891aa0b4fe415b7780752e57db5c3c1860d'),
+    (2, 'test2', 'pbkdf2-sha256$600000$00112233445566778899aabbccddeeff$789a95f0eed0a9ceb639c5d039f1f891aa0b4fe415b7780752e57db5c3c1860d');
 
 INSERT INTO characters (id, account_id, name, level)
 VALUES
     (1001, 1, 'Warrior', 10),
-    (1002, 1, 'Magician', 15);
+    (1002, 1, 'Magician', 15),
+    (2001, 2, 'Archer', 12);
