@@ -17,6 +17,7 @@ public:
     bool NotifyPlayerEntered(Player& player);
     void NotifyPlayerLeaving(Player& player);
     bool NotifyPlayerMoved(Player& player);
+    bool NotifyPlayerChat(Player& player, const char* message);
 
     Player* FindPlayer(uint32_t characterId) const;
 

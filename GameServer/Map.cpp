@@ -58,6 +58,22 @@ namespace
         memcpy(sendBuffer + sizeof(header), &payload, sizeof(payload));
         return session.Send(sendBuffer, sizeof(sendBuffer));
     }
+
+    bool SendPlayerChat(GameSession& session, const Player& player, const char* message)
+    {
+        PlayerChat payload;
+        payload.characterId = player.GetCharacterId();
+        strcpy_s(payload.message, message);
+
+        PacketHeader header;
+        header.size = sizeof(PacketHeader) + sizeof(PlayerChat);
+        header.opcode = static_cast<uint16_t>(GamePacketOpcode::PlayerChat);
+
+        char sendBuffer[sizeof(PacketHeader) + sizeof(PlayerChat)];
+        memcpy(sendBuffer, &header, sizeof(header));
+        memcpy(sendBuffer + sizeof(header), &payload, sizeof(payload));
+        return session.Send(sendBuffer, sizeof(sendBuffer));
+    }
 }
 
 Map::Map(uint32_t mapId) : _mapId(mapId)
@@ -144,6 +160,21 @@ bool Map::NotifyPlayerMoved(Player& player)
             continue;
 
         if (!SendPlayerMove(*existingSession, player))
+            return false;
+    }
+
+    return true;
+}
+
+bool Map::NotifyPlayerChat(Player& player, const char* message)
+{
+    for (const auto& [characterId, existingPlayer] : _players)
+    {
+        GameSession* existingSession = existingPlayer->GetSession();
+        if (existingSession == nullptr)
+            continue;
+
+        if (!SendPlayerChat(*existingSession, player, message))
             return false;
     }
 

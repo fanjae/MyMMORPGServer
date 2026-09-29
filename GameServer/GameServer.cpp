@@ -124,6 +124,7 @@ int main()
     PlayerManager playerManager;
     MapManager mapManager;
     mapManager.CreateMap(100000000);
+    mapManager.CreateMap(100000001);
 
     IocpWorker worker(iocp, sessionManager);
 

@@ -255,6 +255,48 @@ namespace
         return playerLeave.characterId == expectedCharacterId;
     }
 
+    bool ChangeMap(SOCKET socket, uint32_t mapId, ChangeMapResult expectedResult)
+    {
+        ChangeMapRequest request;
+        request.mapId = mapId;
+
+        ChangeMapResponse response;
+        if (!SendPacket(socket, GamePacketOpcode::ChangeMapRequest, request) ||
+            !RecvPacket(socket, GamePacketOpcode::ChangeMapResponse, response))
+            return false;
+
+        return response.result == expectedResult && response.mapId == mapId;
+    }
+
+    bool SendChat(SOCKET socket, const char* message)
+    {
+        ChatRequest request;
+        strcpy_s(request.message, message);
+        return SendPacket(socket, GamePacketOpcode::ChatRequest, request);
+    }
+
+    bool RecvPlayerChat(SOCKET socket, uint32_t expectedCharacterId, const char* expectedMessage)
+    {
+        PlayerChat playerChat;
+        if (!RecvPacket(socket, GamePacketOpcode::PlayerChat, playerChat))
+            return false;
+
+        return playerChat.characterId == expectedCharacterId && strcmp(playerChat.message, expectedMessage) == 0;
+    }
+
+    bool HasPendingData(SOCKET socket, long timeoutMilliseconds)
+    {
+        fd_set readSet;
+        FD_ZERO(&readSet);
+        FD_SET(socket, &readSet);
+
+        timeval timeout;
+        timeout.tv_sec = timeoutMilliseconds / 1000;
+        timeout.tv_usec = (timeoutMilliseconds % 1000) * 1000;
+
+        return select(0, &readSet, nullptr, nullptr, &timeout) > 0;
+    }
+
     bool ReenterAfterDisconnect(const char* loginId, const char* password, uint8_t characterIndex, SOCKET& gameSocket)
     {
         constexpr int32_t MAX_ATTEMPTS = 20;
@@ -341,6 +383,38 @@ int main()
 
     if (success)
         std::cout << "[PASS] Player B received Player A's movement\n";
+
+    success = success && SendChat(playerASocket, "same map chat") &&
+        RecvPlayerChat(playerASocket, playerATicket.characterId, "same map chat") &&
+        RecvPlayerChat(playerBSocket, playerATicket.characterId, "same map chat");
+
+    if (success)
+        std::cout << "[PASS] Players in the same map received local chat\n";
+
+    success = success && ChangeMap(playerASocket, 100000001, ChangeMapResult::Success) &&
+        RecvPlayerLeave(playerBSocket, playerATicket.characterId);
+
+    if (success)
+        std::cout << "[PASS] Player A changed maps and Player B received the map leave\n";
+
+    success = success && SendMove(playerASocket, 300, 80) && !HasPendingData(playerBSocket, 200);
+
+    if (success)
+        std::cout << "[PASS] Movement was isolated between different maps\n";
+
+    success = success && SendChat(playerASocket, "different map chat") &&
+        RecvPlayerChat(playerASocket, playerATicket.characterId, "different map chat") &&
+        !HasPendingData(playerBSocket, 200);
+
+    if (success)
+        std::cout << "[PASS] Local chat was isolated between different maps\n";
+
+    success = success && ChangeMap(playerASocket, 100000000, ChangeMapResult::Success) &&
+        RecvPlayerEnter(playerBSocket, playerATicket.characterId) &&
+        RecvPlayerEnter(playerASocket, playerBTicket.characterId);
+
+    if (success)
+        std::cout << "[PASS] Player A returned and map presence was synchronized\n";
 
     success = success && TestDuplicateEntry("test", "test1234", 0);
     if (success)

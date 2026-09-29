@@ -29,6 +29,12 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
     case GamePacketOpcode::MoveRequest:
         return HandleMove(session, payload, payloadSize);
 
+    case GamePacketOpcode::ChangeMapRequest:
+        return HandleChangeMap(session, payload, payloadSize);
+
+    case GamePacketOpcode::ChatRequest:
+        return HandleChat(session, payload, payloadSize);
+
     default:
         return false;
     }
@@ -171,4 +177,99 @@ bool GamePacketHandler::HandleMove(GameSession& session, const char* payload, ui
 
     player->SetPosition(request.x, request.y);
     return player->GetMap()->NotifyPlayerMoved(*player);
+}
+
+bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || payloadSize != sizeof(ChangeMapRequest))
+        return false;
+
+    Player* player = session.GetPlayer();
+    if (player == nullptr || player->GetMap() == nullptr)
+        return false;
+
+    ChangeMapRequest request;
+    memcpy(&request, payload, sizeof(request));
+
+    ChangeMapResponse response;
+    Map* oldMap = player->GetMap();
+    Map* newMap = session.GetMapManager().FindMap(request.mapId);
+
+    if (newMap == nullptr)
+    {
+        response.result = ChangeMapResult::MapNotFound;
+    }
+    else if (newMap == oldMap)
+    {
+        response.result = ChangeMapResult::AlreadyInMap;
+        response.mapId = oldMap->GetMapId();
+        response.x = player->GetX();
+        response.y = player->GetY();
+    }
+    else
+    {
+        const int32_t oldX = player->GetX();
+        const int32_t oldY = player->GetY();
+
+        oldMap->NotifyPlayerLeaving(*player);
+        oldMap->RemovePlayer(*player);
+        player->SetPosition(0, 0);
+
+        if (!newMap->AddPlayer(*player))
+        {
+            player->SetPosition(oldX, oldY);
+            if (!oldMap->AddPlayer(*player))
+                return false;
+
+            response.result = ChangeMapResult::MapEnterFailed;
+            response.mapId = oldMap->GetMapId();
+            response.x = oldX;
+            response.y = oldY;
+
+            if (!oldMap->NotifyPlayerEntered(*player))
+                return false;
+        }
+        else
+        {
+            response.result = ChangeMapResult::Success;
+            response.mapId = newMap->GetMapId();
+            response.x = player->GetX();
+            response.y = player->GetY();
+        }
+    }
+
+    PacketHeader header;
+    header.size = sizeof(PacketHeader) + sizeof(ChangeMapResponse);
+    header.opcode = static_cast<uint16_t>(GamePacketOpcode::ChangeMapResponse);
+
+    char sendBuffer[sizeof(PacketHeader) + sizeof(ChangeMapResponse)];
+    memcpy(sendBuffer, &header, sizeof(header));
+    memcpy(sendBuffer + sizeof(header), &response, sizeof(response));
+
+    if (!session.Send(sendBuffer, sizeof(sendBuffer)))
+        return false;
+
+    if (response.result == ChangeMapResult::Success && !newMap->NotifyPlayerEntered(*player))
+        return false;
+
+    return true;
+}
+
+bool GamePacketHandler::HandleChat(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || payloadSize != sizeof(ChatRequest))
+        return false;
+
+    Player* player = session.GetPlayer();
+    if (player == nullptr || player->GetMap() == nullptr)
+        return false;
+
+    ChatRequest request;
+    memcpy(&request, payload, sizeof(request));
+    request.message[MAX_CHAT_MESSAGE_LENGTH - 1] = '\0';
+
+    if (request.message[0] == '\0')
+        return true;
+
+    return player->GetMap()->NotifyPlayerChat(*player, request.message);
 }
