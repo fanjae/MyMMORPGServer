@@ -7,7 +7,11 @@ constexpr uint32_t MAX_PLAYER_NAME_LENGTH = 16;
 enum class GamePacketOpcode : uint16_t
 {
     EnterGameRequest = 1,
-    EnterGameResponse = 2
+    EnterGameResponse = 2,
+    PlayerEnterMap = 3,
+    PlayerLeaveMap = 4,
+    MoveRequest = 5,
+    PlayerMove = 6
 };
 
 enum class EnterGameResult : uint8_t
@@ -33,6 +37,35 @@ struct EnterGameResponse
     uint32_t characterId = 0;
     char name[MAX_PLAYER_NAME_LENGTH] = {};
     uint16_t level = 0;
+    int32_t x = 0;
+    int32_t y = 0;
+};
+
+struct PlayerEnterMap
+{
+    uint32_t characterId = 0;
+    char name[MAX_PLAYER_NAME_LENGTH] = {};
+    uint16_t level = 0;
+    int32_t x = 0;
+    int32_t y = 0;
+};
+
+struct PlayerLeaveMap
+{
+    uint32_t characterId = 0;
+};
+
+struct MoveRequest
+{
+    int32_t x = 0;
+    int32_t y = 0;
+};
+
+struct PlayerMove
+{
+    uint32_t characterId = 0;
+    int32_t x = 0;
+    int32_t y = 0;
 };
 
 #pragma pack(pop)

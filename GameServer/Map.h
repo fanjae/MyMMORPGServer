@@ -14,6 +14,9 @@ public:
 
     bool AddPlayer(Player& player);
     void RemovePlayer(Player& player);
+    bool NotifyPlayerEntered(Player& player);
+    void NotifyPlayerLeaving(Player& player);
+    bool NotifyPlayerMoved(Player& player);
 
     Player* FindPlayer(uint32_t characterId) const;
 

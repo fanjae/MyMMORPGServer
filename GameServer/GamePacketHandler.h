@@ -11,4 +11,5 @@ public:
 
 private:
     static bool HandleEnterGame(GameSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleMove(GameSession& session, const char* payload, uint16_t payloadSize);
 };

@@ -26,6 +26,9 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
     case GamePacketOpcode::EnterGameRequest:
         return HandleEnterGame(session, payload, payloadSize);
 
+    case GamePacketOpcode::MoveRequest:
+        return HandleMove(session, payload, payloadSize);
+
     default:
         return false;
     }
@@ -99,6 +102,7 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
                     }
                     else
                     {
+                        player->SetSession(&session);
                         session.SetAccountId(character.accountId);
                         session.SetCharacterId(character.characterId);
                         session.SetPlayer(std::move(player));
@@ -113,6 +117,8 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
                         response.characterId = enteredPlayer->GetCharacterId();
                         strcpy_s(response.name, enteredPlayer->GetName().c_str());
                         response.level = enteredPlayer->GetLevel();
+                        response.x = enteredPlayer->GetX();
+                        response.y = enteredPlayer->GetY();
 
                         std::cout << "Game Session Authenticated: accountId=" << enteredPlayer->GetAccountId()
                             << " characterId=" << enteredPlayer->GetCharacterId()
@@ -134,5 +140,35 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
     memcpy(sendBuffer, &header, sizeof(header));
     memcpy(sendBuffer + sizeof(header), &response, sizeof(response));
 
-    return session.Send(sendBuffer, sizeof(sendBuffer));
+    if (!session.Send(sendBuffer, sizeof(sendBuffer)))
+        return false;
+
+    if (response.result == EnterGameResult::Success)
+    {
+        Player* enteredPlayer = session.GetPlayer();
+        if (enteredPlayer == nullptr || enteredPlayer->GetMap() == nullptr)
+            return false;
+
+        if (!enteredPlayer->GetMap()->NotifyPlayerEntered(*enteredPlayer))
+            return false;
+    }
+
+    return true;
+}
+
+
+bool GamePacketHandler::HandleMove(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || payloadSize != sizeof(MoveRequest))
+        return false;
+
+    Player* player = session.GetPlayer();
+    if (player == nullptr || player->GetMap() == nullptr)
+        return false;
+
+    MoveRequest request;
+    memcpy(&request, payload, sizeof(request));
+
+    player->SetPosition(request.x, request.y);
+    return player->GetMap()->NotifyPlayerMoved(*player);
 }

@@ -220,6 +220,41 @@ namespace
         return EnterGame(ticket, EnterGameResult::AlreadyInGame, socket);
     }
 
+    bool RecvPlayerEnter(SOCKET socket, uint32_t expectedCharacterId)
+    {
+        PlayerEnterMap playerEnter;
+        if (!RecvPacket(socket, GamePacketOpcode::PlayerEnterMap, playerEnter))
+            return false;
+
+        return playerEnter.characterId == expectedCharacterId;
+    }
+
+    bool SendMove(SOCKET socket, int32_t x, int32_t y)
+    {
+        MoveRequest request;
+        request.x = x;
+        request.y = y;
+        return SendPacket(socket, GamePacketOpcode::MoveRequest, request);
+    }
+
+    bool RecvPlayerMove(SOCKET socket, uint32_t expectedCharacterId, int32_t expectedX, int32_t expectedY)
+    {
+        PlayerMove playerMove;
+        if (!RecvPacket(socket, GamePacketOpcode::PlayerMove, playerMove))
+            return false;
+
+        return playerMove.characterId == expectedCharacterId && playerMove.x == expectedX && playerMove.y == expectedY;
+    }
+
+    bool RecvPlayerLeave(SOCKET socket, uint32_t expectedCharacterId)
+    {
+        PlayerLeaveMap playerLeave;
+        if (!RecvPacket(socket, GamePacketOpcode::PlayerLeaveMap, playerLeave))
+            return false;
+
+        return playerLeave.characterId == expectedCharacterId;
+    }
+
     bool ReenterAfterDisconnect(const char* loginId, const char* password, uint8_t characterIndex, SOCKET& gameSocket)
     {
         constexpr int32_t MAX_ATTEMPTS = 20;
@@ -294,6 +329,19 @@ int main()
     if (success)
         std::cout << "[PASS] Player B entered while Player A remained connected\n";
 
+    success = success &&
+        RecvPlayerEnter(playerASocket, playerBTicket.characterId) &&
+        RecvPlayerEnter(playerBSocket, playerATicket.characterId);
+
+    if (success)
+        std::cout << "[PASS] Players received each other's map entry\n";
+
+    success = success && SendMove(playerASocket, 120, 45) &&
+        RecvPlayerMove(playerBSocket, playerATicket.characterId, 120, 45);
+
+    if (success)
+        std::cout << "[PASS] Player B received Player A's movement\n";
+
     success = success && TestDuplicateEntry("test", "test1234", 0);
     if (success)
         std::cout << "[PASS] Duplicate character entry was rejected\n";
@@ -308,9 +356,20 @@ int main()
         playerASocket = INVALID_SOCKET;
     }
 
+    success = success && RecvPlayerLeave(playerBSocket, playerATicket.characterId);
+    if (success)
+        std::cout << "[PASS] Player B received Player A's map leave\n";
+
     success = success && ReenterAfterDisconnect("test", "test1234", 0, reenteredPlayerASocket);
     if (success)
         std::cout << "[PASS] Player A re-entered after disconnect cleanup\n";
+
+    success = success &&
+        RecvPlayerEnter(playerBSocket, playerATicket.characterId) &&
+        RecvPlayerEnter(reenteredPlayerASocket, playerBTicket.characterId);
+
+    if (success)
+        std::cout << "[PASS] Players received map entry after Player A re-entered\n";
 
     if (reenteredPlayerASocket != INVALID_SOCKET)
         closesocket(reenteredPlayerASocket);

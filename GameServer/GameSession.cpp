@@ -30,9 +30,13 @@ void GameSession::OnDisconnected()
     if (_player != nullptr)
     {
         if (Map* map = _player->GetMap())
+        {
+            map->NotifyPlayerLeaving(*_player);
             map->RemovePlayer(*_player);
+        }
 
         _playerManager.Remove(*_player);
+        _player->SetSession(nullptr);
 
         std::cout << "Player Left Game: accountId=" << _player->GetAccountId()
             << " characterId=" << _player->GetCharacterId()
