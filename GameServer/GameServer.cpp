@@ -11,6 +11,7 @@
 #include "CharacterRepository.h"
 #include "GameSession.h"
 #include "MapManager.h"
+#include "Monster.h"
 #include "PlayerManager.h"
 #include "ServerSession.h"
 
@@ -123,8 +124,13 @@ int main()
     AuthTicketManager authTicketManager;
     PlayerManager playerManager;
     MapManager mapManager;
-    mapManager.CreateMap(100000000);
-    mapManager.CreateMap(100000001);
+    // 실제 Map/Portal 데이터 로딩 전까지 테스트용 입장 위치를 Map 생성 시 함께 등록한다.
+    Map& startMap = mapManager.CreateMap(100000000, 0, 0);
+    mapManager.CreateMap(100000001, 100, 50);
+
+    Monster testMonster(1, 50, 20);
+    if (!startMap.AddMonster(testMonster))
+        return 1;
 
     IocpWorker worker(iocp, sessionManager);
 

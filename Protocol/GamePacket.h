@@ -16,7 +16,8 @@ enum class GamePacketOpcode : uint16_t
     ChangeMapRequest = 7,
     ChangeMapResponse = 8,
     ChatRequest = 9,
-    PlayerChat = 10
+    PlayerChat = 10,
+    MonsterEnterMap = 11
 };
 
 enum class EnterGameResult : uint8_t
@@ -103,6 +104,12 @@ struct PlayerChat
 {
     uint32_t characterId = 0;
     char message[MAX_CHAT_MESSAGE_LENGTH] = {};
+};
+struct MonsterEnterMap
+{
+    uint32_t monsterId = 0;
+    int32_t x = 0;
+    int32_t y = 0;
 };
 
 #pragma pack(pop)

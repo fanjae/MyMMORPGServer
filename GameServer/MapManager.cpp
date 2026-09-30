@@ -3,14 +3,14 @@
 
 MapManager::~MapManager() = default;
 
-Map& MapManager::CreateMap(uint32_t mapId)
+Map& MapManager::CreateMap(uint32_t mapId, int32_t spawnX, int32_t spawnY)
 {
     auto it = _maps.find(mapId);
 
     if (it != _maps.end())
         return *it->second;
 
-    auto map = std::make_unique<Map>(mapId);
+    auto map = std::make_unique<Map>(mapId, spawnX, spawnY);
     Map& result = *map;
 
     _maps.emplace(mapId, std::move(map));

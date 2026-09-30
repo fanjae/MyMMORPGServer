@@ -229,6 +229,14 @@ namespace
         return playerEnter.characterId == expectedCharacterId;
     }
 
+bool RecvMonsterEnter(SOCKET socket, uint32_t expectedMonsterId, int32_t expectedX, int32_t expectedY)
+    {
+        MonsterEnterMap monsterEnter;
+        if (!RecvPacket(socket, GamePacketOpcode::MonsterEnterMap, monsterEnter))
+            return false;
+
+        return monsterEnter.monsterId == expectedMonsterId && monsterEnter.x == expectedX && monsterEnter.y == expectedY;
+    }
     bool SendMove(SOCKET socket, int32_t x, int32_t y)
     {
         MoveRequest request;
@@ -362,6 +370,8 @@ int main()
     bool success = CreateCharacterTicket("test", "test1234", 0, playerATicket) &&
         EnterGame(playerATicket, EnterGameResult::Success, playerASocket);
 
+    success = success && RecvMonsterEnter(playerASocket, 1, 50, 20);
+
     if (success)
         std::cout << "[PASS] Player A entered the game\n";
 
@@ -373,7 +383,8 @@ int main()
 
     success = success &&
         RecvPlayerEnter(playerASocket, playerBTicket.characterId) &&
-        RecvPlayerEnter(playerBSocket, playerATicket.characterId);
+        RecvPlayerEnter(playerBSocket, playerATicket.characterId) &&
+        RecvMonsterEnter(playerBSocket, 1, 50, 20);
 
     if (success)
         std::cout << "[PASS] Players received each other's map entry\n";
@@ -411,7 +422,8 @@ int main()
 
     success = success && ChangeMap(playerASocket, 100000000, ChangeMapResult::Success) &&
         RecvPlayerEnter(playerBSocket, playerATicket.characterId) &&
-        RecvPlayerEnter(playerASocket, playerBTicket.characterId);
+        RecvPlayerEnter(playerASocket, playerBTicket.characterId) &&
+        RecvMonsterEnter(playerASocket, 1, 50, 20);
 
     if (success)
         std::cout << "[PASS] Player A returned and map presence was synchronized\n";
@@ -440,7 +452,8 @@ int main()
 
     success = success &&
         RecvPlayerEnter(playerBSocket, playerATicket.characterId) &&
-        RecvPlayerEnter(reenteredPlayerASocket, playerBTicket.characterId);
+        RecvPlayerEnter(reenteredPlayerASocket, playerBTicket.characterId) &&
+        RecvMonsterEnter(reenteredPlayerASocket, 1, 50, 20);
 
     if (success)
         std::cout << "[PASS] Players received map entry after Player A re-entered\n";
@@ -462,3 +475,4 @@ int main()
     std::cout << "Multi-client player lifecycle test succeeded\n";
     return 0;
 }
+
