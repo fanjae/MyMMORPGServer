@@ -108,6 +108,7 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
                     }
                     else
                     {
+                        player->SetPosition(map->GetSpawnX(), map->GetSpawnY());
                         player->SetSession(&session);
                         session.SetAccountId(character.accountId);
                         session.SetCharacterId(character.characterId);
@@ -175,8 +176,7 @@ bool GamePacketHandler::HandleMove(GameSession& session, const char* payload, ui
     MoveRequest request;
     memcpy(&request, payload, sizeof(request));
 
-    player->SetPosition(request.x, request.y);
-    return player->GetMap()->NotifyPlayerMoved(*player);
+    return player->GetMap()->MovePlayer(*player, request.x, request.y);
 }
 
 bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payload, uint16_t payloadSize)
@@ -213,7 +213,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
 
         oldMap->NotifyPlayerLeaving(*player);
         oldMap->RemovePlayer(*player);
-        player->SetPosition(0, 0);
+        player->SetPosition(newMap->GetSpawnX(), newMap->GetSpawnY());
 
         if (!newMap->AddPlayer(*player))
         {

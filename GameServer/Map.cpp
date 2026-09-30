@@ -1,5 +1,6 @@
 #include "Map.h"
 #include "GameSession.h"
+#include "Monster.h"
 #include "Player.h"
 #include "../Protocol/GamePacket.h"
 #include "../ServerCore/Packet.h"
@@ -59,6 +60,23 @@ namespace
         return session.Send(sendBuffer, sizeof(sendBuffer));
     }
 
+    bool SendMonsterEnter(GameSession& session, const Monster& monster)
+    {
+        MonsterEnterMap payload;
+        payload.monsterId = monster.GetMonsterId();
+        payload.x = monster.GetX();
+        payload.y = monster.GetY();
+
+        PacketHeader header;
+        header.size = sizeof(PacketHeader) + sizeof(MonsterEnterMap);
+        header.opcode = static_cast<uint16_t>(GamePacketOpcode::MonsterEnterMap);
+
+        char sendBuffer[sizeof(PacketHeader) + sizeof(MonsterEnterMap)];
+        memcpy(sendBuffer, &header, sizeof(header));
+        memcpy(sendBuffer + sizeof(header), &payload, sizeof(payload));
+        return session.Send(sendBuffer, sizeof(sendBuffer));
+    }
+
     bool SendPlayerChat(GameSession& session, const Player& player, const char* message)
     {
         PlayerChat payload;
@@ -76,7 +94,7 @@ namespace
     }
 }
 
-Map::Map(uint32_t mapId) : _mapId(mapId)
+Map::Map(uint32_t mapId, int32_t spawnX, int32_t spawnY) : _mapId(mapId), _spawnX(spawnX), _spawnY(spawnY)
 {
 }
 
@@ -108,6 +126,45 @@ void Map::RemovePlayer(Player& player)
         player.SetMap(nullptr);
 }
 
+bool Map::MovePlayer(Player& player, int32_t x, int32_t y)
+{
+    auto it = _players.find(player.GetCharacterId());
+
+    if (it == _players.end() || it->second != &player || player.GetMap() != this)
+        return false;
+
+    player.SetPosition(x, y);
+    return NotifyPlayerMoved(player);
+}
+
+bool Map::AddMonster(Monster& monster)
+{
+    const uint32_t monsterId = monster.GetMonsterId();
+
+    if (_monsters.find(monsterId) != _monsters.end())
+        return false;
+
+    if (monster.GetMap() != nullptr)
+        return false;
+
+    _monsters.emplace(monsterId, &monster);
+    monster.SetMap(this);
+    return true;
+}
+
+void Map::RemoveMonster(Monster& monster)
+{
+    auto it = _monsters.find(monster.GetMonsterId());
+
+    if (it == _monsters.end() || it->second != &monster)
+        return;
+
+    _monsters.erase(it);
+
+    if (monster.GetMap() == this)
+        monster.SetMap(nullptr);
+}
+
 bool Map::NotifyPlayerEntered(Player& player)
 {
     GameSession* enteredSession = player.GetSession();
@@ -127,6 +184,12 @@ bool Map::NotifyPlayerEntered(Player& player)
             return false;
 
         if (!SendPlayerEnter(*existingSession, player))
+            return false;
+    }
+
+    for (const auto& [monsterId, monster] : _monsters)
+    {
+        if (!SendMonsterEnter(*enteredSession, *monster))
             return false;
     }
 
@@ -186,6 +249,16 @@ Player* Map::FindPlayer(uint32_t characterId) const
     auto it = _players.find(characterId);
 
     if (it == _players.end())
+        return nullptr;
+
+    return it->second;
+}
+
+Monster* Map::FindMonster(uint32_t monsterId) const
+{
+    auto it = _monsters.find(monsterId);
+
+    if (it == _monsters.end())
         return nullptr;
 
     return it->second;
