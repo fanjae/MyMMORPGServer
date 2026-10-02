@@ -229,7 +229,7 @@ namespace
         return playerEnter.characterId == expectedCharacterId;
     }
 
-bool RecvMonsterEnter(SOCKET socket, uint32_t expectedMonsterId, int32_t expectedX, int32_t expectedY)
+    bool RecvMonsterEnter(SOCKET socket, uint32_t expectedMonsterId, int32_t expectedX, int32_t expectedY)
     {
         MonsterEnterMap monsterEnter;
         if (!RecvPacket(socket, GamePacketOpcode::MonsterEnterMap, monsterEnter))
@@ -237,6 +237,7 @@ bool RecvMonsterEnter(SOCKET socket, uint32_t expectedMonsterId, int32_t expecte
 
         return monsterEnter.monsterId == expectedMonsterId && monsterEnter.x == expectedX && monsterEnter.y == expectedY;
     }
+
     bool SendMove(SOCKET socket, int32_t x, int32_t y)
     {
         MoveRequest request;
@@ -472,6 +473,7 @@ int main()
         return 1;
     }
 
+    std::cout << "[PASS] Monster map-local visibility was synchronized on entry, map return, and re-entry\n";
     std::cout << "Multi-client player lifecycle test succeeded\n";
     return 0;
 }
