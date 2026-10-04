@@ -161,6 +161,8 @@
     <ClInclude Include="GamePacketHandler.h" />
     <ClInclude Include="GameSession.h" />
     <ClInclude Include="Map.h" />
+    <ClInclude Include="MapDefinition.h" />
+    <ClInclude Include="MovementValidator.h" />
     <ClInclude Include="MapManager.h" />
     <ClInclude Include="Monster.h" />
     <ClInclude Include="Player.h" />
@@ -169,6 +171,10 @@
     <ClInclude Include="ServerSession.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyMapData" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)data" />
+    <Copy SourceFiles="$(ProjectDir)..\data\maps.csv" DestinationFolder="$(OutDir)data" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

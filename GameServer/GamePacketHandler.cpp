@@ -156,7 +156,7 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
         if (enteredPlayer == nullptr || enteredPlayer->GetMap() == nullptr)
             return false;
 
-        if (!enteredPlayer->GetMap()->NotifyPlayerEntered(*enteredPlayer))
+        if (!enteredPlayer->GetMap()->SendMapInfo(*enteredPlayer) || !enteredPlayer->GetMap()->NotifyPlayerEntered(*enteredPlayer))
             return false;
     }
 
@@ -176,7 +176,34 @@ bool GamePacketHandler::HandleMove(GameSession& session, const char* payload, ui
     MoveRequest request;
     memcpy(&request, payload, sizeof(request));
 
-    return player->GetMap()->MovePlayer(*player, request.x, request.y);
+    Map* map = player->GetMap();
+    MoveResponse response;
+    response.sequence = request.sequence;
+    response.mapId = map->GetMapId();
+
+    if (!player->AcceptMoveSequence(request.sequence))
+        response.result = MoveResult::InvalidSequence;
+    else if (request.mapId != map->GetMapId())
+        response.result = MoveResult::MapMismatch;
+    else
+        response.result = map->MovePlayer(*player, request.x, request.y);
+
+    response.x = player->GetX();
+    response.y = player->GetY();
+
+    PacketHeader header;
+    header.size = sizeof(PacketHeader) + sizeof(MoveResponse);
+    header.opcode = static_cast<uint16_t>(GamePacketOpcode::MoveResponse);
+
+    char sendBuffer[sizeof(PacketHeader) + sizeof(MoveResponse)];
+    memcpy(sendBuffer, &header, sizeof(header));
+    memcpy(sendBuffer + sizeof(header), &response, sizeof(response));
+
+    // 이동 거절은 연결 오류가 아니므로 확정 좌표를 응답하고 세션을 유지한다.
+    if (!session.Send(sendBuffer, sizeof(sendBuffer)))
+        return false;
+
+    return response.result != MoveResult::Success || map->NotifyPlayerMoved(*player);
 }
 
 bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payload, uint16_t payloadSize)
@@ -194,6 +221,9 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     ChangeMapResponse response;
     Map* oldMap = player->GetMap();
     Map* newMap = session.GetMapManager().FindMap(request.mapId);
+    response.mapId = oldMap->GetMapId();
+    response.x = player->GetX();
+    response.y = player->GetY();
 
     if (newMap == nullptr)
     {
@@ -249,7 +279,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     if (!session.Send(sendBuffer, sizeof(sendBuffer)))
         return false;
 
-    if (response.result == ChangeMapResult::Success && !newMap->NotifyPlayerEntered(*player))
+    if (response.result == ChangeMapResult::Success && (!newMap->SendMapInfo(*player) || !newMap->NotifyPlayerEntered(*player)))
         return false;
 
     return true;

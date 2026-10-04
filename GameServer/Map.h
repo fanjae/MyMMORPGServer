@@ -1,5 +1,8 @@
 #pragma once
 
+#include "MapDefinition.h"
+#include "../Protocol/GamePacket.h"
+
 #include <cstdint>
 #include <unordered_map>
 
@@ -9,19 +12,21 @@ class Player;
 class Map
 {
 public:
-    Map(uint32_t mapId, int32_t spawnX, int32_t spawnY);
+    explicit Map(const MapDefinition& definition);
 
-    uint32_t GetMapId() const { return _mapId; }
-    int32_t GetSpawnX() const { return _spawnX; }
-    int32_t GetSpawnY() const { return _spawnY; }
+    uint32_t GetMapId() const { return _definition.mapId; }
+    int32_t GetSpawnX() const { return _definition.spawnX; }
+    int32_t GetSpawnY() const { return _definition.spawnY; }
+    const MapDefinition& GetDefinition() const { return _definition; }
 
     bool AddPlayer(Player& player);
     void RemovePlayer(Player& player);
-    bool MovePlayer(Player& player, int32_t x, int32_t y);
+    MoveResult MovePlayer(Player& player, int32_t x, int32_t y);
     bool AddMonster(Monster& monster);
     void RemoveMonster(Monster& monster);
 
     bool NotifyPlayerEntered(Player& player);
+    bool SendMapInfo(Player& player);
     void NotifyPlayerLeaving(Player& player);
     bool NotifyPlayerMoved(Player& player);
     bool NotifyPlayerChat(Player& player, const char* message);
@@ -30,9 +35,7 @@ public:
     Monster* FindMonster(uint32_t monsterId) const;
 
 private:
-    uint32_t _mapId = 0;
-    int32_t _spawnX = 0;
-    int32_t _spawnY = 0;
+    MapDefinition _definition;
     std::unordered_map<uint32_t, Player*> _players;
     std::unordered_map<uint32_t, Monster*> _monsters;
 };

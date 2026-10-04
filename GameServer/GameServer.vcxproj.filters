@@ -71,6 +71,12 @@
     <ClInclude Include="Map.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="MapDefinition.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MovementValidator.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
     <ClInclude Include="MapManager.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>

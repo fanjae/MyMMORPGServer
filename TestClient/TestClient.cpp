@@ -167,6 +167,12 @@ namespace
         return true;
     }
 
+    bool RecvMapInfo(SOCKET socket, uint32_t mapId)
+    {
+        MapInfo info;
+        return RecvPacket(socket, GamePacketOpcode::MapInfo, info) && info.mapId == mapId && info.moveSpeed == 80;
+    }
+
     bool EnterGame(const CharacterTicket& ticket, EnterGameResult expectedResult, SOCKET& gameSocket)
     {
         gameSocket = Connect(ticket.gameServerPort);
@@ -194,7 +200,7 @@ namespace
             return false;
         }
 
-        if (expectedResult == EnterGameResult::Success && response.characterId != ticket.characterId)
+        if (expectedResult == EnterGameResult::Success && (response.characterId != ticket.characterId || !RecvMapInfo(gameSocket, 100000000)))
         {
             closesocket(gameSocket);
             gameSocket = INVALID_SOCKET;
@@ -238,12 +244,20 @@ namespace
         return monsterEnter.monsterId == expectedMonsterId && monsterEnter.x == expectedX && monsterEnter.y == expectedY;
     }
 
-    bool SendMove(SOCKET socket, int32_t x, int32_t y)
+    bool SendMove(SOCKET socket, int32_t x, int32_t y, uint32_t mapId = 100000000)
     {
+        static uint64_t sequence = 0;
         MoveRequest request;
+        request.mapId = mapId;
+        request.sequence = ++sequence;
         request.x = x;
         request.y = y;
-        return SendPacket(socket, GamePacketOpcode::MoveRequest, request);
+
+        MoveResponse response;
+        return SendPacket(socket, GamePacketOpcode::MoveRequest, request) &&
+            RecvPacket(socket, GamePacketOpcode::MoveResponse, response) &&
+            response.result == MoveResult::Success && response.sequence == request.sequence &&
+            response.mapId == mapId && response.x == x && response.y == y;
     }
 
     bool RecvPlayerMove(SOCKET socket, uint32_t expectedCharacterId, int32_t expectedX, int32_t expectedY)
@@ -274,7 +288,8 @@ namespace
             !RecvPacket(socket, GamePacketOpcode::ChangeMapResponse, response))
             return false;
 
-        return response.result == expectedResult && response.mapId == mapId;
+        return response.result == expectedResult && response.mapId == mapId &&
+            (expectedResult != ChangeMapResult::Success || RecvMapInfo(socket, mapId));
     }
 
     bool SendChat(SOCKET socket, const char* message)
@@ -339,6 +354,12 @@ namespace
                     return false;
                 }
 
+                if (!RecvMapInfo(socket, 100000000))
+                {
+                    closesocket(socket);
+                    return false;
+                }
+
                 gameSocket = socket;
                 return true;
             }
@@ -390,8 +411,8 @@ int main()
     if (success)
         std::cout << "[PASS] Players received each other's map entry\n";
 
-    success = success && SendMove(playerASocket, 120, 45) &&
-        RecvPlayerMove(playerBSocket, playerATicket.characterId, 120, 45);
+    success = success && SendMove(playerASocket, 8, 4) &&
+        RecvPlayerMove(playerBSocket, playerATicket.characterId, 8, 4);
 
     if (success)
         std::cout << "[PASS] Player B received Player A's movement\n";
@@ -409,7 +430,7 @@ int main()
     if (success)
         std::cout << "[PASS] Player A changed maps and Player B received the map leave\n";
 
-    success = success && SendMove(playerASocket, 300, 80) && !HasPendingData(playerBSocket, 200);
+    success = success && SendMove(playerASocket, 108, 54, 100000001) && !HasPendingData(playerBSocket, 200);
 
     if (success)
         std::cout << "[PASS] Movement was isolated between different maps\n";

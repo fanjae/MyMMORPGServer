@@ -1,20 +1,113 @@
-#include "MapManager.h"
+﻿#include "MapManager.h"
 #include "Map.h"
+
+#include <array>
+#include <charconv>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <sstream>
 
 MapManager::~MapManager() = default;
 
-Map& MapManager::CreateMap(uint32_t mapId, int32_t spawnX, int32_t spawnY)
+bool MapManager::LoadMaps(const std::string& path)
 {
-    auto it = _maps.find(mapId);
+    if (!_maps.empty())
+        return false;
 
-    if (it != _maps.end())
-        return *it->second;
+    std::ifstream file(path);
+    std::string line;
+    if (!std::getline(file, line))
+    {
+        std::cerr << "Map data could not be read: " << path << '\n';
+        return false;
+    }
 
-    auto map = std::make_unique<Map>(mapId, spawnX, spawnY);
-    Map& result = *map;
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
 
-    _maps.emplace(mapId, std::move(map));
-    return result;
+    if (line != "mapId,spawnX,spawnY,minX,maxX,minY,maxY,moveSpeed,moveBurst")
+    {
+        std::cerr << "Invalid map data header: " << path << '\n';
+        return false;
+    }
+
+    std::unordered_map<uint32_t, std::unique_ptr<Map>> maps;
+    uint32_t lineNumber = 1;
+
+    while (std::getline(file, line))
+    {
+        ++lineNumber;
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+
+        std::istringstream row(line);
+        std::array<int64_t, 9> values{};
+        bool valid = !line.empty() && line.back() != ',';
+
+        for (int64_t& value : values)
+        {
+            std::string field;
+            if (!std::getline(row, field, ','))
+            {
+                valid = false;
+                break;
+            }
+
+            auto result = std::from_chars(field.data(), field.data() + field.size(), value);
+            if (result.ec != std::errc{} || result.ptr != field.data() + field.size())
+                valid = false;
+        }
+
+        std::string extra;
+        if (std::getline(row, extra, ','))
+            valid = false;
+
+        for (size_t i = 1; i <= 6; ++i)
+        {
+            if (values[i] < (std::numeric_limits<int32_t>::min)() || values[i] > (std::numeric_limits<int32_t>::max)())
+                valid = false;
+        }
+
+        for (size_t i : { 0u, 7u, 8u })
+        {
+            if (values[i] <= 0 || values[i] > (std::numeric_limits<uint32_t>::max)())
+                valid = false;
+        }
+
+        MapDefinition definition;
+        if (valid)
+        {
+            definition.mapId = static_cast<uint32_t>(values[0]);
+            definition.spawnX = static_cast<int32_t>(values[1]);
+            definition.spawnY = static_cast<int32_t>(values[2]);
+            definition.minX = static_cast<int32_t>(values[3]);
+            definition.maxX = static_cast<int32_t>(values[4]);
+            definition.minY = static_cast<int32_t>(values[5]);
+            definition.maxY = static_cast<int32_t>(values[6]);
+            definition.moveSpeed = static_cast<uint32_t>(values[7]);
+            definition.moveBurst = static_cast<uint32_t>(values[8]);
+            valid = definition.IsValid() && maps.find(definition.mapId) == maps.end();
+        }
+
+        if (!valid)
+        {
+            std::cerr << "Invalid map data: " << path << " line=" << lineNumber << '\n';
+            return false;
+        }
+
+        maps.emplace(definition.mapId, std::make_unique<Map>(definition));
+    }
+
+    if (file.bad() || maps.empty())
+    {
+        std::cerr << "Map data is empty or unreadable: " << path << '\n';
+        return false;
+    }
+
+    // 모든 행을 검증한 뒤 한 번에 등록해 일부 Map만 로딩되는 상태를 피한다.
+    _maps.swap(maps);
+    return true;
 }
 
 Map* MapManager::FindMap(uint32_t mapId) const

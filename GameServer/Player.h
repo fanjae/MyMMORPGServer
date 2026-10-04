@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "MovementValidator.h"
+
 #include <cstdint>
 #include <string>
 
@@ -24,6 +26,8 @@ public:
 
     Map* GetMap() const { return _map; }
     void SetMap(Map* map) { _map = map; }
+    MovementValidator& GetMovementValidator() { return _movementValidator; }
+    bool AcceptMoveSequence(uint64_t sequence);
 
 private:
     uint32_t _characterId = 0;
@@ -34,4 +38,6 @@ private:
     int32_t _y = 0;
     GameSession* _session = nullptr;
     Map* _map = nullptr;
+    MovementValidator _movementValidator;
+    uint64_t _lastMoveSequence = 0;
 };

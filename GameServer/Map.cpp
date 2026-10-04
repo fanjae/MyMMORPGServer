@@ -1,4 +1,4 @@
-#include "Map.h"
+﻿#include "Map.h"
 #include "GameSession.h"
 #include "Monster.h"
 #include "Player.h"
@@ -6,6 +6,7 @@
 #include "../ServerCore/Packet.h"
 
 #include <cstring>
+#include <cmath>
 
 namespace
 {
@@ -94,7 +95,7 @@ namespace
     }
 }
 
-Map::Map(uint32_t mapId, int32_t spawnX, int32_t spawnY) : _mapId(mapId), _spawnX(spawnX), _spawnY(spawnY)
+Map::Map(const MapDefinition& definition) : _definition(definition)
 {
 }
 
@@ -110,6 +111,7 @@ bool Map::AddPlayer(Player& player)
 
     _players.emplace(characterId, &player);
     player.SetMap(this);
+    player.GetMovementValidator().Reset(_definition.moveSpeed, _definition.moveBurst);
     return true;
 }
 
@@ -126,15 +128,51 @@ void Map::RemovePlayer(Player& player)
         player.SetMap(nullptr);
 }
 
-bool Map::MovePlayer(Player& player, int32_t x, int32_t y)
+MoveResult Map::MovePlayer(Player& player, int32_t x, int32_t y)
 {
     auto it = _players.find(player.GetCharacterId());
 
     if (it == _players.end() || it->second != &player || player.GetMap() != this)
-        return false;
+        return MoveResult::MapMismatch;
+
+    if (!_definition.Contains(x, y))
+        return MoveResult::OutOfBounds;
+
+    // int32 좌표끼리 빼기 전에 변환해 극단적인 요청 좌표에서도 overflow를 피한다.
+    double deltaX = static_cast<double>(x) - player.GetX();
+    double deltaY = static_cast<double>(y) - player.GetY();
+    double distance = std::hypot(deltaX, deltaY);
+
+    if (!player.GetMovementValidator().TryConsume(distance))
+        return MoveResult::SpeedExceeded;
 
     player.SetPosition(x, y);
-    return NotifyPlayerMoved(player);
+    return MoveResult::Success;
+}
+
+bool Map::SendMapInfo(Player& player)
+{
+    GameSession* session = player.GetSession();
+    if (session == nullptr)
+        return false;
+
+    MapInfo payload;
+    payload.mapId = _definition.mapId;
+    payload.minX = _definition.minX;
+    payload.maxX = _definition.maxX;
+    payload.minY = _definition.minY;
+    payload.maxY = _definition.maxY;
+    payload.moveSpeed = _definition.moveSpeed;
+    payload.moveBurst = _definition.moveBurst;
+
+    PacketHeader header;
+    header.size = sizeof(PacketHeader) + sizeof(MapInfo);
+    header.opcode = static_cast<uint16_t>(GamePacketOpcode::MapInfo);
+
+    char sendBuffer[sizeof(PacketHeader) + sizeof(MapInfo)];
+    memcpy(sendBuffer, &header, sizeof(header));
+    memcpy(sendBuffer + sizeof(header), &payload, sizeof(payload));
+    return session->Send(sendBuffer, sizeof(sendBuffer));
 }
 
 bool Map::AddMonster(Monster& monster)

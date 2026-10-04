@@ -17,7 +17,9 @@ enum class GamePacketOpcode : uint16_t
     ChangeMapResponse = 8,
     ChatRequest = 9,
     PlayerChat = 10,
-    MonsterEnterMap = 11
+    MonsterEnterMap = 11,
+    MoveResponse = 12,
+    MapInfo = 13
 };
 
 enum class EnterGameResult : uint8_t
@@ -36,6 +38,15 @@ enum class ChangeMapResult : uint8_t
     MapNotFound = 1,
     AlreadyInMap = 2,
     MapEnterFailed = 3
+};
+
+enum class MoveResult : uint8_t
+{
+    Success = 0,
+    OutOfBounds = 1,
+    SpeedExceeded = 2,
+    MapMismatch = 3,
+    InvalidSequence = 4
 };
 
 #pragma pack(push, 1)
@@ -71,8 +82,30 @@ struct PlayerLeaveMap
 
 struct MoveRequest
 {
+    uint32_t mapId = 0;
+    uint64_t sequence = 0;
     int32_t x = 0;
     int32_t y = 0;
+};
+
+struct MoveResponse
+{
+    uint64_t sequence = 0;
+    uint32_t mapId = 0;
+    MoveResult result = MoveResult::Success;
+    int32_t x = 0;
+    int32_t y = 0;
+};
+
+struct MapInfo
+{
+    uint32_t mapId = 0;
+    int32_t minX = 0;
+    int32_t maxX = 0;
+    int32_t minY = 0;
+    int32_t maxY = 0;
+    uint32_t moveSpeed = 0;
+    uint32_t moveBurst = 0;
 };
 
 struct PlayerMove
@@ -113,3 +146,7 @@ struct MonsterEnterMap
 };
 
 #pragma pack(pop)
+
+static_assert(sizeof(MoveRequest) == 20);
+static_assert(sizeof(MoveResponse) == 21);
+static_assert(sizeof(MapInfo) == 28);

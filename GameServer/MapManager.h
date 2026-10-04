@@ -5,13 +5,14 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <string>
 
 class MapManager
 {
 public:
     ~MapManager();
 
-    Map& CreateMap(uint32_t mapId, int32_t spawnX, int32_t spawnY);
+    bool LoadMaps(const std::string& path);
     Map* FindMap(uint32_t mapId) const;
 
 private:

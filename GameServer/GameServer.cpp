@@ -16,6 +16,7 @@
 #include "ServerSession.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -38,8 +39,20 @@ namespace
     }
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+    MapManager mapManager;
+    std::filesystem::path mapPath = argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::absolute(argv[0]).parent_path() / "data" / "maps.csv";
+    if (!mapManager.LoadMaps(mapPath.string()))
+        return 1;
+
+    Map* startMap = mapManager.FindMap(100000000);
+    if (startMap == nullptr)
+    {
+        std::cerr << "Start map is missing: 100000000\n";
+        return 1;
+    }
+
     const std::string dbHost = GetEnvironmentVariable("DB_HOST");
     const std::string dbUser = GetEnvironmentVariable("DB_USER");
     const std::string dbPassword = GetEnvironmentVariable("DB_PASSWORD");
@@ -123,13 +136,8 @@ int main()
     SessionManager sessionManager;
     AuthTicketManager authTicketManager;
     PlayerManager playerManager;
-    MapManager mapManager;
-    // 실제 Map/Portal 데이터 로딩 전까지 테스트용 입장 위치를 Map 생성 시 함께 등록한다.
-    Map& startMap = mapManager.CreateMap(100000000, 0, 0);
-    mapManager.CreateMap(100000001, 100, 50);
-
     Monster testMonster(1, 50, 20);
-    if (!startMap.AddMonster(testMonster))
+    if (!startMap->AddMonster(testMonster))
         return 1;
 
     IocpWorker worker(iocp, sessionManager);
