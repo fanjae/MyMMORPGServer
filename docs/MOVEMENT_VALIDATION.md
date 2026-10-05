@@ -2,7 +2,7 @@
 
 ## 구현 범위
 
-상하좌우 자유 이동을 유지하면서 Map 경계와 이동 속도를 서버에서 검사합니다. 정상 이동과 거절된 이동 모두 요청자에게 확정 좌표를 응답합니다. 같은 Map의 상대 Player에게는 허용된 이동만 전달합니다. 발판, 벽, 캐릭터 크기, 점프·중력·착지는 다음 단계입니다. 현재 경계 검사는 캐릭터의 중심 좌표를 기준으로 합니다.
+이 문서는 Free 맵의 상하좌우 자유 이동과 Map 경계·속도 검사 기준입니다. 정상 이동과 거절된 이동 모두 요청자에게 확정 좌표를 응답하고 같은 Map의 상대에게 허용된 이동만 전달합니다. 현재 Free 경계 검사는 캐릭터 중심 좌표를 기준으로 합니다. 시작 맵은 Platformer로 전환했으며 발판·벽·몸체 크기·점프·착지는 [PLATFORM_NETWORK.md](PLATFORM_NETWORK.md)의 입력 프로토콜을 사용합니다. Platformer에서 절대 좌표 MoveRequest는 WrongMovementMode로 거절합니다.
 
 ## 맵 설정
 
@@ -24,7 +24,7 @@ mapId,spawnX,spawnY,minX,maxX,minY,maxY,moveSpeed,moveBurst
 
 좌표는 int32 범위여야 하며 최소 경계는 최대 경계보다 작아야 합니다. 시작 맵 `100000000`은 필수입니다. 잘못된 파일은 DB 연결과 포트 개방 전에 오류를 출력하고 종료합니다. 맵은 시작 시 로딩하며 실행 중 변경은 지원하지 않습니다.
 
-빌드 시 CSV가 `x64/Release/data/maps.csv`로 복사됩니다. 인자 없이 실행하면 실행 파일 옆의 CSV를 읽습니다. 원본을 직접 지정하려면 서버 저장소에서 다음과 같이 실행합니다.
+빌드 시 CSV가 `x64/Release/data/maps.csv`로 복사됩니다. 인자 없이 실행하면 실행 파일 옆의 CSV를 읽습니다. 발판 로더 추가 이후에는 같은 디렉터리에 map_movement.csv, footholds.csv, colliders.csv도 필요하며 빌드 시 함께 복사됩니다. 지형 파일은 시작 시 검증하지만 현재 자유 이동 프로토콜은 유지합니다. 상세 내용은 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md)에 있습니다. 원본을 직접 지정하려면 서버 저장소에서 다음과 같이 실행합니다.
 
 ```powershell
 .\x64\Release\GameServer.exe .\data\maps.csv
