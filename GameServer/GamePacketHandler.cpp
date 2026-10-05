@@ -21,6 +21,8 @@ namespace
 
 bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
+    // 경과한 tick은 새 입력을 적용하기 전에 이전 입력으로 처리한다.
+    session.GetMapManager().Advance();
     switch (static_cast<GamePacketOpcode>(opcode))
     {
     case GamePacketOpcode::EnterGameRequest:
@@ -35,6 +37,9 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
     case GamePacketOpcode::ChatRequest:
         return HandleChat(session, payload, payloadSize);
 
+    case GamePacketOpcode::MovementInput:
+        return HandleMovementInput(session, payload, payloadSize);
+
     default:
         return false;
     }
@@ -42,15 +47,20 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
 
 bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payload, uint16_t payloadSize)
 {
-    if (payloadSize != sizeof(EnterGameRequest))
+    if (payloadSize != sizeof(EnterGameRequest) && payloadSize != sizeof(uint64_t))
         return false;
 
     EnterGameRequest request;
-    memcpy(&request, payload, sizeof(request));
+    request.protocolVersion = 0;
+    memcpy(&request, payload, payloadSize);
 
     EnterGameResponse response;
 
-    if (session.IsAuthenticated())
+    if (request.protocolVersion != GAME_PROTOCOL_VERSION)
+    {
+        response.result = EnterGameResult::ProtocolMismatch;
+    }
+    else if (session.IsAuthenticated())
     {
         response.result = EnterGameResult::AlreadyAuthenticated;
     }
@@ -156,7 +166,7 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
         if (enteredPlayer == nullptr || enteredPlayer->GetMap() == nullptr)
             return false;
 
-        if (!enteredPlayer->GetMap()->SendMapInfo(*enteredPlayer) || !enteredPlayer->GetMap()->NotifyPlayerEntered(*enteredPlayer))
+        if (!enteredPlayer->GetMap()->SendMapInfo(*enteredPlayer) || !enteredPlayer->GetMap()->SendGeometry(*enteredPlayer) || !enteredPlayer->GetMap()->NotifyPlayerEntered(*enteredPlayer))
             return false;
     }
 
@@ -236,6 +246,10 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
         response.x = player->GetX();
         response.y = player->GetY();
     }
+    else if (newMap->FindPlayer(player->GetCharacterId()) != nullptr)
+    {
+        response.result = ChangeMapResult::MapEnterFailed;
+    }
     else
     {
         const int32_t oldX = player->GetX();
@@ -279,7 +293,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     if (!session.Send(sendBuffer, sizeof(sendBuffer)))
         return false;
 
-    if (response.result == ChangeMapResult::Success && (!newMap->SendMapInfo(*player) || !newMap->NotifyPlayerEntered(*player)))
+    if (response.result == ChangeMapResult::Success && (!newMap->SendMapInfo(*player) || !newMap->SendGeometry(*player) || !newMap->NotifyPlayerEntered(*player)))
         return false;
 
     return true;
@@ -302,4 +316,25 @@ bool GamePacketHandler::HandleChat(GameSession& session, const char* payload, ui
         return true;
 
     return player->GetMap()->NotifyPlayerChat(*player, request.message);
+}
+
+bool GamePacketHandler::HandleMovementInput(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || payloadSize != sizeof(MovementInputPacket))
+        return false;
+
+    Player* player = session.GetPlayer();
+    if (player == nullptr || player->GetMap() == nullptr)
+        return false;
+
+    MovementInputPacket request;
+    memcpy(&request, payload, sizeof(request));
+    Map* map = player->GetMap();
+    if (!map->IsPlatformer())
+        return true;
+
+    if (request.mapId != map->GetMapId() || !player->AcceptInput(request))
+        return map->SendMovementState(*player, *player, MovementStateReason::InputRejected);
+
+    return true;
 }

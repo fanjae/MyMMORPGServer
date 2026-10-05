@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 .env
+
+/artifacts/chatgpt-hybrid-mcp/
+/tools/chatgpt-hybrid-mcp/*

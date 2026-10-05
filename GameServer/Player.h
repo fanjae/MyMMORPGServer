@@ -1,6 +1,9 @@
 ﻿#pragma once
 
 #include "MovementValidator.h"
+#include "MovementSimulation.h"
+#include "../Protocol/GamePacket.h"
+#include <chrono>
 
 #include <cstdint>
 #include <string>
@@ -28,6 +31,14 @@ public:
     void SetMap(Map* map) { _map = map; }
     MovementValidator& GetMovementValidator() { return _movementValidator; }
     bool AcceptMoveSequence(uint64_t sequence);
+    void BeginMap();
+    bool AcceptInput(const MovementInputPacket& input);
+    uint64_t GetGeneration() const { return _generation; }
+    uint64_t GetInputSequence() const { return _appliedInputSequence; }
+    PlatformMovementState& GetPlatformState() { return _platformState; }
+    const PlatformMovementState& GetPlatformState() const { return _platformState; }
+    PlatformMovementInput ConsumeInput(std::chrono::steady_clock::time_point now, bool& expired);
+    void FinishInput() { _platformState.jumpHeld = _input.jumpHeld; }
 
 private:
     uint32_t _characterId = 0;
@@ -40,4 +51,11 @@ private:
     Map* _map = nullptr;
     MovementValidator _movementValidator;
     uint64_t _lastMoveSequence = 0;
+    uint64_t _generation = 0;
+    uint64_t _inputSequence = 0;
+    uint64_t _appliedInputSequence = 0;
+    PlatformMovementState _platformState;
+    PlatformMovementInput _input;
+    bool _jumpPending = false;
+    std::chrono::steady_clock::time_point _inputTime;
 };

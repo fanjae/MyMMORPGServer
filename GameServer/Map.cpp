@@ -7,9 +7,23 @@
 
 #include <cstring>
 #include <cmath>
+#include <vector>
 
 namespace
 {
+    template<typename T>
+    bool SendPacket(GameSession& session, GamePacketOpcode opcode, const T& payload)
+    {
+        static_assert(sizeof(T) + sizeof(PacketHeader) <= MAX_PACKET_SIZE);
+        PacketHeader header;
+        header.size = sizeof(PacketHeader) + sizeof(T);
+        header.opcode = static_cast<uint16_t>(opcode);
+        char buffer[sizeof(PacketHeader) + sizeof(T)];
+        memcpy(buffer, &header, sizeof(header));
+        memcpy(buffer + sizeof(header), &payload, sizeof(payload));
+        return session.Send(buffer, sizeof(buffer));
+    }
+
     bool SendPlayerEnter(GameSession& session, const Player& player)
     {
         PlayerEnterMap payload;
@@ -112,6 +126,12 @@ bool Map::AddPlayer(Player& player)
     _players.emplace(characterId, &player);
     player.SetMap(this);
     player.GetMovementValidator().Reset(_definition.moveSpeed, _definition.moveBurst);
+    player.BeginMap();
+    if (IsPlatformer())
+    {
+        _simulation->Reset(player.GetPlatformState());
+        player.SetPosition(_definition.spawnX, _definition.spawnY);
+    }
     return true;
 }
 
@@ -130,6 +150,8 @@ void Map::RemovePlayer(Player& player)
 
 MoveResult Map::MovePlayer(Player& player, int32_t x, int32_t y)
 {
+    if (IsPlatformer())
+        return MoveResult::WrongMovementMode;
     auto it = _players.find(player.GetCharacterId());
 
     if (it == _players.end() || it->second != &player || player.GetMap() != this)
@@ -223,6 +245,9 @@ bool Map::NotifyPlayerEntered(Player& player)
 
         if (!SendPlayerEnter(*existingSession, player))
             return false;
+
+        if (IsPlatformer() && (!SendMovementState(player, *existingPlayer) || !SendMovementState(*existingPlayer, player)))
+            return false;
     }
 
     for (const auto& [monsterId, monster] : _monsters)
@@ -232,6 +257,135 @@ bool Map::NotifyPlayerEntered(Player& player)
     }
 
     return true;
+}
+
+void Map::SetGeometry(const MapGeometry& geometry)
+{
+    _geometry = &geometry;
+    _simulation = std::make_unique<MovementSimulation>(geometry);
+}
+
+bool Map::IsPlatformer() const
+{
+    return _geometry != nullptr && _geometry->movement.movementMode == MovementMode::Platformer;
+}
+
+bool Map::SendGeometry(Player& player)
+{
+    GameSession* session = player.GetSession();
+    if (_geometry == nullptr || session == nullptr)
+        return false;
+
+    const auto& movement = _geometry->movement;
+    MapGeometryPacket payload;
+    payload.mapId = GetMapId();
+    payload.generation = player.GetGeneration();
+    payload.version = movement.geometryVersion;
+    payload.mode = static_cast<uint8_t>(movement.movementMode);
+    payload.halfWidth = movement.halfWidth;
+    payload.halfHeight = movement.halfHeight;
+    payload.horizontalSpeed = movement.horizontalSpeed;
+    payload.jumpSpeed = movement.jumpSpeed;
+    payload.gravity = movement.gravity;
+    payload.maxFallSpeed = movement.maxFallSpeed;
+    payload.spawnX = GetSpawnX();
+    payload.spawnY = GetSpawnY();
+    payload.spawnFootholdId = movement.spawnFootholdId;
+    payload.footholdCount = static_cast<uint16_t>(_geometry->footholds.size());
+    payload.colliderCount = static_cast<uint16_t>(_geometry->colliders.size());
+    if (!SendPacket(*session, GamePacketOpcode::MapGeometry, payload))
+        return false;
+
+    // 지형을 객체 단위로 나눠 전송해 최대 패킷 크기를 넘지 않도록 한다.
+    for (const auto& foothold : _geometry->footholds)
+    {
+        FootholdPacket packet{ GetMapId(), player.GetGeneration(), foothold.footholdId, foothold.x1, foothold.y1, foothold.x2, foothold.y2, foothold.prevId, foothold.nextId };
+        if (!SendPacket(*session, GamePacketOpcode::Foothold, packet))
+            return false;
+    }
+
+    for (const auto& collider : _geometry->colliders)
+    {
+        ColliderPacket packet{ GetMapId(), player.GetGeneration(), collider.colliderId, collider.minX, collider.minY, collider.maxX, collider.maxY };
+        if (!SendPacket(*session, GamePacketOpcode::Collider, packet))
+            return false;
+    }
+
+    GeometryEndPacket end{ GetMapId(), player.GetGeneration() };
+    if (!SendPacket(*session, GamePacketOpcode::GeometryEnd, end))
+        return false;
+
+    return !IsPlatformer() || SendMovementState(player, player);
+}
+
+bool Map::SendMovementState(Player& recipient, const Player& player, MovementStateReason reason)
+{
+    if (recipient.GetSession() == nullptr)
+        return false;
+
+    const auto& state = player.GetPlatformState();
+    MovementStatePacket packet;
+    packet.mapId = GetMapId();
+    // 수신자의 입장 번호를 사용해 같은 맵 재입장 전의 상태도 구분한다.
+    packet.generation = recipient.GetGeneration();
+    packet.characterId = player.GetCharacterId();
+    packet.serverTick = _tick;
+    packet.sequence = player.GetInputSequence();
+    packet.x = std::llround(state.x * 1000.0);
+    packet.y = std::llround(state.y * 1000.0);
+    packet.velocityX = std::llround(state.velocityX * 1000.0);
+    packet.velocityY = std::llround(state.velocityY * 1000.0);
+    packet.footholdId = state.footholdId;
+    packet.grounded = state.grounded;
+    packet.reason = reason;
+    return SendPacket(*recipient.GetSession(), GamePacketOpcode::MovementState, packet);
+}
+
+void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
+{
+    _tick = tick;
+    if (!IsPlatformer())
+        return;
+
+    std::vector<GameSession*> failed;
+    for (const auto& entry : _players)
+    {
+        Player& player = *entry.second;
+        auto& state = player.GetPlatformState();
+        bool grounded = state.grounded;
+        bool expired = false;
+        bool hadInput = state.velocityX != 0.0 || state.jumpHeld;
+        auto input = player.ConsumeInput(now, expired);
+        SimulationResult result = _simulation->Step(state, input);
+        player.FinishInput();
+        MovementStateReason reason = MovementStateReason::Normal;
+        if (result == SimulationResult::InvalidState)
+        {
+            _simulation->Reset(state);
+            reason = MovementStateReason::Respawned;
+        }
+        else if (result == SimulationResult::Respawned)
+            reason = MovementStateReason::Respawned;
+        else if (expired && hadInput)
+            reason = MovementStateReason::InputExpired;
+
+        player.SetPosition(static_cast<int32_t>(std::llround(state.x)), static_cast<int32_t>(std::llround(state.y)));
+        if (tick % 3 != 0 && grounded == state.grounded && reason == MovementStateReason::Normal)
+            continue;
+
+        for (const auto& recipient : _players)
+        {
+            if (!SendMovementState(*recipient.second, player, reason))
+                failed.push_back(recipient.second->GetSession());
+        }
+    }
+
+    // 연결 종료 콜백은 Player를 제거하므로 순회가 끝난 뒤 처리한다.
+    for (GameSession* session : failed)
+    {
+        if (session != nullptr)
+            session->Close();
+    }
 }
 
 void Map::NotifyPlayerLeaving(Player& player)

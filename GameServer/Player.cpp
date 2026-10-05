@@ -16,3 +16,47 @@ bool Player::AcceptMoveSequence(uint64_t sequence)
     _lastMoveSequence = sequence;
     return true;
 }
+
+void Player::BeginMap()
+{
+    ++_generation;
+    _inputSequence = 0;
+    _appliedInputSequence = 0;
+    _input = {};
+    _jumpPending = false;
+    _inputTime = std::chrono::steady_clock::now();
+}
+
+bool Player::AcceptInput(const MovementInputPacket& input)
+{
+    if (input.generation != _generation || input.sequence <= _inputSequence || input.horizontal < -1 || input.horizontal > 1 || input.jumpHeld > 1)
+        return false;
+
+    // 같은 tick 사이에 점프와 해제가 도착해도 짧은 점프 입력을 보존한다.
+    if (input.jumpHeld != 0 && !_input.jumpHeld)
+        _jumpPending = true;
+
+    _inputSequence = input.sequence;
+    _input.horizontal = input.horizontal;
+    _input.jumpHeld = input.jumpHeld != 0;
+    _inputTime = std::chrono::steady_clock::now();
+    return true;
+}
+
+PlatformMovementInput Player::ConsumeInput(std::chrono::steady_clock::time_point now, bool& expired)
+{
+    expired = now - _inputTime >= std::chrono::milliseconds(250);
+    if (expired)
+    {
+        _input = {};
+        _jumpPending = false;
+    }
+
+    PlatformMovementInput input = _input;
+    _appliedInputSequence = _inputSequence;
+    if (_jumpPending)
+        _platformState.jumpHeld = false;
+    input.jumpHeld = input.jumpHeld || _jumpPending;
+    _jumpPending = false;
+    return input;
+}

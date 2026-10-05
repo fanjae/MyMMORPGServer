@@ -1,5 +1,6 @@
 ﻿#include "MapManager.h"
 #include "Map.h"
+#include "MapGeometryLoader.h"
 
 #include <array>
 #include <charconv>
@@ -110,6 +111,34 @@ bool MapManager::LoadMaps(const std::string& path)
     return true;
 }
 
+bool MapManager::LoadGeometry(const std::string& directory)
+{
+    if (_maps.empty() || !_geometries.empty())
+        return false;
+
+    std::unordered_map<uint32_t, MapDefinition> definitions;
+    for (const auto& entry : _maps)
+        definitions.emplace(entry.first, entry.second->GetDefinition());
+
+    std::string error;
+    if (!MapGeometryLoader::Load(directory, definitions, _geometries, error))
+    {
+        std::cerr << error << '\n';
+        return false;
+    }
+
+    for (const auto& entry : _geometries)
+        _maps.at(entry.first)->SetGeometry(entry.second);
+
+    return true;
+}
+
+const MapGeometry* MapManager::FindGeometry(uint32_t mapId) const
+{
+    auto it = _geometries.find(mapId);
+    return it == _geometries.end() ? nullptr : &it->second;
+}
+
 Map* MapManager::FindMap(uint32_t mapId) const
 {
     auto it = _maps.find(mapId);
@@ -118,4 +147,35 @@ Map* MapManager::FindMap(uint32_t mapId) const
         return nullptr;
 
     return it->second.get();
+}
+
+void MapManager::Advance()
+{
+    auto now = std::chrono::steady_clock::now();
+    uint32_t count = 0;
+    while (now >= _nextTick && count < 5)
+    {
+        ++_tick;
+        for (const auto& entry : _maps)
+            entry.second->Tick(_tick, _nextTick);
+
+        _nextTick += std::chrono::milliseconds(20);
+        ++count;
+    }
+
+    // 긴 지연을 한 번에 재생하지 않고 처리량과 입력 유효 시간을 제한한다.
+    if (now >= _nextTick)
+    {
+        std::cerr << "Map tick catch-up limit reached\n";
+        _nextTick = now + std::chrono::milliseconds(20);
+    }
+}
+
+uint32_t MapManager::GetWaitMilliseconds() const
+{
+    auto remaining = _nextTick - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::steady_clock::duration::zero())
+        return 0;
+
+    return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count() + 1);
 }

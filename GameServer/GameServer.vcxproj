@@ -144,6 +144,8 @@
     <ClCompile Include="GameSession.cpp" />
     <ClCompile Include="Map.cpp" />
     <ClCompile Include="MapManager.cpp" />
+    <ClCompile Include="MapGeometryLoader.cpp" />
+    <ClCompile Include="MovementSimulation.cpp" />
     <ClCompile Include="Monster.cpp" />
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="PlayerManager.cpp" />
@@ -162,6 +164,9 @@
     <ClInclude Include="GameSession.h" />
     <ClInclude Include="Map.h" />
     <ClInclude Include="MapDefinition.h" />
+    <ClInclude Include="MapGeometry.h" />
+    <ClInclude Include="MapGeometryLoader.h" />
+    <ClInclude Include="MovementSimulation.h" />
     <ClInclude Include="MovementValidator.h" />
     <ClInclude Include="MapManager.h" />
     <ClInclude Include="Monster.h" />
@@ -174,6 +179,7 @@
   <Target Name="CopyMapData" AfterTargets="Build">
     <MakeDir Directories="$(OutDir)data" />
     <Copy SourceFiles="$(ProjectDir)..\data\maps.csv" DestinationFolder="$(OutDir)data" />
+    <Copy SourceFiles="$(ProjectDir)..\data\map_movement.csv;$(ProjectDir)..\data\footholds.csv;$(ProjectDir)..\data\colliders.csv" DestinationFolder="$(OutDir)data" />
   </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

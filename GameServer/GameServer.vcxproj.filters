@@ -42,6 +42,12 @@
     <ClCompile Include="MapManager.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="MapGeometryLoader.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="MovementSimulation.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
     <ClCompile Include="PlayerManager.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
@@ -72,6 +78,15 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="MapDefinition.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MapGeometry.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MapGeometryLoader.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MovementSimulation.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="MovementValidator.h">

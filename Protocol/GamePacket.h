@@ -4,6 +4,7 @@
 
 constexpr uint32_t MAX_PLAYER_NAME_LENGTH = 16;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
+constexpr uint32_t GAME_PROTOCOL_VERSION = 2;
 
 enum class GamePacketOpcode : uint16_t
 {
@@ -19,7 +20,13 @@ enum class GamePacketOpcode : uint16_t
     PlayerChat = 10,
     MonsterEnterMap = 11,
     MoveResponse = 12,
-    MapInfo = 13
+    MapInfo = 13,
+    MovementInput = 14,
+    MovementState = 15,
+    MapGeometry = 16,
+    Foothold = 17,
+    Collider = 18,
+    GeometryEnd = 19
 };
 
 enum class EnterGameResult : uint8_t
@@ -29,7 +36,8 @@ enum class EnterGameResult : uint8_t
     AlreadyAuthenticated = 2,
     CharacterLoadFailed = 3,
     AlreadyInGame = 4,
-    MapEnterFailed = 5
+    MapEnterFailed = 5,
+    ProtocolMismatch = 6
 };
 
 enum class ChangeMapResult : uint8_t
@@ -46,14 +54,92 @@ enum class MoveResult : uint8_t
     OutOfBounds = 1,
     SpeedExceeded = 2,
     MapMismatch = 3,
-    InvalidSequence = 4
+    InvalidSequence = 4,
+    WrongMovementMode = 5
 };
+
+enum class MovementStateReason : uint8_t { Normal = 0, Respawned = 1, InputRejected = 2, InputExpired = 3 };
 
 #pragma pack(push, 1)
 
 struct EnterGameRequest
 {
     uint64_t authKey = 0;
+    uint32_t protocolVersion = GAME_PROTOCOL_VERSION;
+};
+
+struct MovementInputPacket
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
+    uint64_t sequence = 0;
+    int8_t horizontal = 0;
+    uint8_t jumpHeld = 0;
+};
+
+struct MovementStatePacket
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
+    uint32_t characterId = 0;
+    uint64_t serverTick = 0;
+    uint64_t sequence = 0;
+    int64_t x = 0;
+    int64_t y = 0;
+    int64_t velocityX = 0;
+    int64_t velocityY = 0;
+    uint32_t footholdId = 0;
+    uint8_t grounded = 0;
+    MovementStateReason reason = MovementStateReason::Normal;
+};
+
+struct MapGeometryPacket
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
+    uint32_t version = 0;
+    uint8_t mode = 0;
+    uint32_t halfWidth = 0;
+    uint32_t halfHeight = 0;
+    uint32_t horizontalSpeed = 0;
+    uint32_t jumpSpeed = 0;
+    uint32_t gravity = 0;
+    uint32_t maxFallSpeed = 0;
+    int32_t spawnX = 0;
+    int32_t spawnY = 0;
+    uint32_t spawnFootholdId = 0;
+    uint16_t footholdCount = 0;
+    uint16_t colliderCount = 0;
+};
+
+struct FootholdPacket
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
+    uint32_t id = 0;
+    int32_t x1 = 0;
+    int32_t y1 = 0;
+    int32_t x2 = 0;
+    int32_t y2 = 0;
+    uint32_t prevId = 0;
+    uint32_t nextId = 0;
+};
+
+struct ColliderPacket
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
+    uint32_t id = 0;
+    int32_t minX = 0;
+    int32_t minY = 0;
+    int32_t maxX = 0;
+    int32_t maxY = 0;
+};
+
+struct GeometryEndPacket
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
 };
 
 struct EnterGameResponse
@@ -150,3 +236,6 @@ struct MonsterEnterMap
 static_assert(sizeof(MoveRequest) == 20);
 static_assert(sizeof(MoveResponse) == 21);
 static_assert(sizeof(MapInfo) == 28);
+static_assert(sizeof(MovementInputPacket) == 22);
+static_assert(sizeof(MovementStatePacket) == 70);
+static_assert(sizeof(MapGeometryPacket) == 57);

@@ -14,4 +14,5 @@ private:
     static bool HandleMove(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleChangeMap(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleChat(GameSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleMovementInput(GameSession& session, const char* payload, uint16_t payloadSize);
 };

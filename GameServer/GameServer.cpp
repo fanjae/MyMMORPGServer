@@ -53,6 +53,10 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    // 지형 검증을 완료한 Map만 실제 이동 시뮬레이션에 사용한다.
+    if (!mapManager.LoadGeometry(mapPath.parent_path().string()))
+        return 1;
+
     const std::string dbHost = GetEnvironmentVariable("DB_HOST");
     const std::string dbUser = GetEnvironmentVariable("DB_USER");
     const std::string dbPassword = GetEnvironmentVariable("DB_PASSWORD");
@@ -156,11 +160,11 @@ int main(int argc, char* argv[])
 
     std::cout << "Waiting for data...\n";
 
+    auto nextCleanup = std::chrono::steady_clock::now();
     while (true)
     {
-        // 네트워크 이벤트가 없어도 주기적으로 만료 티켓을 정리해야 하므로
-        // IOCP를 무한 대기하지 않고 1초 timeout으로 dispatch
-        if (!worker.Dispatch(1000))
+        mapManager.Advance();
+        if (!worker.Dispatch(mapManager.GetWaitMilliseconds()))
         {
             gameListener.Close();
             serverListener.Close();
@@ -169,7 +173,11 @@ int main(int argc, char* argv[])
         }
 
         sessionManager.Cleanup();
-        authTicketManager.CleanupExpired();
+        if (std::chrono::steady_clock::now() >= nextCleanup)
+        {
+            authTicketManager.CleanupExpired();
+            nextCleanup = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        }
     }
 
     gameListener.Close();
