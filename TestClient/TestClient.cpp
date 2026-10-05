@@ -170,7 +170,18 @@ namespace
     bool RecvMapInfo(SOCKET socket, uint32_t mapId)
     {
         MapInfo info;
-        return RecvPacket(socket, GamePacketOpcode::MapInfo, info) && info.mapId == mapId && info.moveSpeed == 80;
+        if (!RecvPacket(socket, GamePacketOpcode::MapInfo, info) || info.mapId != mapId || info.moveSpeed != 80)
+            return false;
+
+        MapGeometryPacket geometry;
+        if (!RecvPacket(socket, GamePacketOpcode::MapGeometry, geometry) || geometry.mapId != mapId || geometry.mode != 0 || geometry.footholdCount != 0 || geometry.colliderCount != 0)
+        {
+            std::cerr << "Legacy movement tests require the Free map fixture\n";
+            return false;
+        }
+
+        GeometryEndPacket end;
+        return RecvPacket(socket, GamePacketOpcode::GeometryEnd, end) && end.mapId == mapId && end.generation == geometry.generation;
     }
 
     bool EnterGame(const CharacterTicket& ticket, EnterGameResult expectedResult, SOCKET& gameSocket)
