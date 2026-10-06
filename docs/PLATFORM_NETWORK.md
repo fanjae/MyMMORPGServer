@@ -1,6 +1,6 @@
 # 발판 이동의 서버·Unity 연결
 
-2026-10-05 구현 기록입니다. 지형 CSV와 물리 규칙은 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md)를 참고합니다.
+2026-10-05 발판 구현과 2026-10-06 프로토콜·채팅 갱신 기록입니다. 지형 CSV와 물리 규칙은 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md), 채팅·귓속말은 [CHAT_WHISPER.md](CHAT_WHISPER.md)를 참고합니다.
 
 ## 구현과 제한
 
@@ -15,7 +15,7 @@
 
 ## wire format
 
-모든 패킷은 little-endian, 1바이트 packing이며 header는 전체 size uint16 + opcode uint16입니다. Game protocol version은 2입니다. EnterGameRequest는 authKey uint64 뒤에 protocolVersion uint32를 추가합니다. 이전 8바이트 요청이나 다른 버전은 ProtocolMismatch(6) 응답을 받으며 인증 티켓을 소비하지 않습니다. 서버와 클라이언트를 함께 갱신해야 합니다.
+모든 패킷은 little-endian, 1바이트 packing이며 header는 전체 size uint16 + opcode uint16입니다. Game protocol version은 4입니다. 이름 필드 확장과 Login version 2는 [NETWORK_RELIABILITY.md](NETWORK_RELIABILITY.md)를 참고합니다. EnterGameRequest는 authKey uint64 뒤에 protocolVersion uint32를 추가합니다. 이전 8바이트 요청이나 다른 버전은 ProtocolMismatch(6) 응답을 받으며 인증 티켓을 소비하지 않습니다. 서버와 클라이언트를 함께 갱신해야 합니다.
 
 | opcode | 패킷 | payload byte | 필드 순서 |
 |---|---|---:|---|
@@ -32,7 +32,7 @@ MovementState의 좌표·속도는 서버 단위의 1/1000을 int64에 저장합
 
 ## 자동 테스트 실행
 
-먼저 서버 솔루션과 Tests/PlatformMovement 프로젝트를 Release x64로 빌드합니다. 빌드 명령은 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md)에 있습니다. test/test1234, test2/test1234와 캐릭터 1001·2001이 들어 있는 테스트 DB가 필요합니다. 기존 DB를 건드리지 않는 임시 MySQL 준비 방법은 클라이언트 TEST_CLIENT.md를 참고합니다.
+먼저 서버 솔루션, Tests/PlatformMovement와 Tests/NetworkReliability 프로젝트를 Release x64로 빌드합니다. 빌드 명령은 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md)에 있습니다. test/test1234, test2/test1234와 캐릭터 1001·2001이 들어 있는 테스트 DB가 필요합니다. 기존 DB를 건드리지 않는 임시 MySQL 준비 방법은 클라이언트 TEST_CLIENT.md를 참고합니다.
 
 Unity 창과 기존 테스트 서버를 닫고 서버 저장소 PowerShell에서 테스트 DB의 환경 변수를 설정합니다. 아래 PASSWORD 값은 실제 개발용 MYSQL_PASSWORD로 직접 바꿉니다.
 
@@ -52,20 +52,22 @@ DB_USER·DB_NAME도 .env의 MYSQL_USER·MYSQL_DATABASE와 다르면 해당 값�
 - 발판 프로토콜·실서버 PASS 14(2,000 tick C++/C# 비교 포함)
 - 임시 Free 설정의 기존 C++ TestClient PASS 15
 - 임시 Free 설정의 기존 C# Map-local PASS 16
+- 통신·서버 채팅 검증 C++ PASS 20·C# 통신 PASS 8
+- C# 채팅 명령·패킷 PASS 8, 실서버 채팅·귓속말 PASS 6
 - 스크립트가 예외 없이 종료
 
 서버를 직접 준비한 경우 클라이언트 저장소에서 `dotnet run --project .\Tests\MapLocalIntegration\MapLocalIntegration.csproj -- --platform`을 실행할 수 있습니다. trace 파일 없이 실행하면 2,000 tick 비교가 제외되어 PASS 13입니다. 기존 기본 실행은 두 맵이 Free인 임시 설정에만 사용하며 기본 발판 맵에서는 설정 안내와 함께 실패합니다.
 
 ## Unity 두 창 수동 테스트
 
-최신 실행 파일은 MyMMORPGClient/Builds/Windows/MyMMORPGClient.exe입니다. Desktop의 이전 실행 파일 대신 이 파일을 두 번 실행합니다. 창모드는 960×540입니다. 동일 DB 설정으로 최신 GameServer와 LoginServer를 실행합니다.
+최신 실행 파일은 MyMMORPGClient/Builds/Chat/MyMMORPGClient.exe입니다. Desktop의 이전 실행 파일 대신 이 파일을 두 번 실행합니다. 창모드는 960×540입니다. 동일 DB 설정으로 최신 GameServer와 LoginServer를 실행합니다.
 
 1. A는 test/test1234 → Warrior(1001), B는 test2/test1234 → Archer(2001)로 입장합니다. 양쪽 Map 100000000, Remote players 1, Monsters 1, 동일 ID의 동일 색상, 녹색 발판을 확인합니다. 같은 spawn에서는 두 사각형이 겹칠 수 있습니다.
 2. A의 빈 게임 영역을 클릭하고 오른쪽을 1초 누른 뒤 놓습니다. A만 이동하고 B 화면의 Remote 1001이 같은 좌표로 갱신되어야 합니다. B의 Local은 유지되어야 합니다. 2초 뒤 A Local과 B Remote 1001이 같고 멈춰 있어야 합니다.
 3. A에서 Space를 짧게 눌렀다가 놓습니다. 본인과 상대 화면에서 점프·중력·착지가 보여야 합니다. Space를 계속 눌러도 착지 후 자동 재점프하면 안 됩니다. 왼쪽 이동과 점프를 함께 하면 낮은 플랫폼(서버 X -140..-20, 발 높이 34)에 올라갈 수 있습니다.
-4. 오른쪽 이동을 계속하면 벽 앞 중심 X=214에서 멈춰야 합니다. 위/아래 방향키는 발판 맵에서 자유 이동을 만들지 않습니다. 절대 좌표 Send는 비활성입니다.
-5. A의 Map Chat에 포커스를 두고 방향키·Space를 눌러도 이동하면 안 됩니다. 메시지를 입력하고 Enter로 전송한 뒤 게임 입력을 다시 확인합니다. B를 비활성화해도 A의 이동·점프 상태를 계속 받아야 합니다.
-6. A를 Map 100000001로 이동합니다. A의 기존 발판·벽·remote·monster가 제거되고 B에서 1001이 제거되어야 합니다. A는 상하좌우 자유 이동과 좌표 Send를 사용할 수 있습니다. A 채팅은 B에게 전달되면 안 됩니다.
+4. 오른쪽 이동을 계속하면 벽 앞 중심 X=214에서 멈춰야 합니다. 위/아래 방향키는 발판 맵에서 자유 이동을 만들지 않습니다. 좌표 지정 Send UI는 제거했습니다.
+5. A의 Chat에 포커스를 두고 방향키·Space를 눌러도 이동하면 안 됩니다. Enter 전송 후 클릭 없이 다음 메시지를 입력하고, Esc로 포커스를 해제해 게임 입력을 확인합니다. B를 비활성화해도 A의 이동·점프 상태를 계속 받아야 합니다. 같은 spawn에서는 본인 사각형과 ID 라벨이 앞에 표시돼야 합니다.
+6. A를 Map 100000001로 이동합니다. A의 기존 발판·벽·remote·monster가 제거되고 B에서 1001이 제거되어야 합니다. A는 상하좌우 자유 이동을 사용할 수 있습니다. 일반 채팅은 B에게 전달되지 않고 `/m 2001 메시지` 귓속말은 양쪽에 한 번씩 표시돼야 합니다.
 7. A를 100000000으로 되돌립니다. 발판·벽, 상대와 monster가 중복 없이 생성되고 좌표 (0,0)에서 다시 점프할 수 있어야 합니다. 999999999 요청은 MapNotFound이고 기존 지형·객체·입장 상태를 유지해야 합니다.
 8. A를 종료하면 B의 Remote players가 0으로 바뀌어야 합니다. 새 로그인으로 재접속할 수 있어야 합니다.
 
@@ -75,4 +77,4 @@ DB_USER·DB_NAME도 .env의 MYSQL_USER·MYSQL_DATABASE와 다르면 해당 값�
 
 서버 Release x64와 Unity 6000.3.7f1 Windows 빌드를 완료했습니다. 임시 MySQL 3307에서 발판 PASS 14, 기존 Free C++ PASS 15·C# PASS 16을 확인했습니다. 독립 물리 PASS 48, 이동 예산 PASS 5, 맵 CSV PASS 10, 지형 시작 검사 PASS 7도 통과했습니다. Unity 화면의 지속 키 입력과 보간의 체감 품질은 위 수동 절차로 별도 확인합니다.
 
-다음 작업은 지연 환경에서 입력 재실행을 포함한 위치 보정 검증, 채팅 빈도 제한 및 연결 종료·재접속 보강입니다. 맵 콘텐츠는 현재 수평 테스트 발판에 한정되므로 경사·사다리 등은 별도 데이터와 이동 규칙을 정한 뒤 추가합니다.
+채팅 빈도 제한과 연결 종료·재접속 검증을 추가했습니다. 다음 작업은 지연 환경에서 입력 저장·재실행을 포함한 위치 보정 검증입니다. 맵 콘텐츠는 현재 수평 테스트 발판에 한정되므로 경사·사다리 등은 별도 데이터와 이동 규칙을 정한 뒤 추가합니다.
