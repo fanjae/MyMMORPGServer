@@ -18,6 +18,9 @@
     <ClCompile Include="GameServer.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="ChatService.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
     <ClCompile Include="GameSession.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
@@ -57,6 +60,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AuthTicketManager.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="ChatService.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="ChatLimiter.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="GameSession.h">
