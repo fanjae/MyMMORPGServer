@@ -12,6 +12,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Protocol", "Protocol", "{C8D5274F-AC00-46C7-1F8D-E88E81087A52}"
 	ProjectSection(SolutionItems) = preProject
 		Protocol\GamePacket.h = Protocol\GamePacket.h
+		Protocol\CharacterName.h = Protocol\CharacterName.h
+		Protocol\Utf8String.h = Protocol\Utf8String.h
 		Protocol\LoginPacket.h = Protocol\LoginPacket.h
 		Protocol\ServerPacket.h = Protocol\ServerPacket.h
 	EndProjectSection

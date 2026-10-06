@@ -1,4 +1,4 @@
-﻿#include "AuthTicketManager.h"
+#include "AuthTicketManager.h"
 #include "CharacterRepository.h"
 #include "GamePacketHandler.h"
 #include "GameSession.h"
@@ -6,6 +6,7 @@
 #include "MapManager.h"
 #include "Player.h"
 #include "PlayerManager.h"
+#include "ChatService.h"
 #include "../Protocol/GamePacket.h"
 #include "../ServerCore/Packet.h"
 
@@ -36,12 +37,28 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
 
     case GamePacketOpcode::ChatRequest:
         return HandleChat(session, payload, payloadSize);
+    case GamePacketOpcode::WhisperRequest:
+        return HandleWhisper(session, payload, payloadSize);
 
     case GamePacketOpcode::MovementInput:
         return HandleMovementInput(session, payload, payloadSize);
 
     default:
         return false;
+    }
+}
+
+namespace
+{
+    bool SendEnterResult(GameSession& session, const EnterGameResponse& response)
+    {
+        PacketHeader header;
+        header.size = sizeof(PacketHeader) + sizeof(response);
+        header.opcode = static_cast<uint16_t>(GamePacketOpcode::EnterGameResponse);
+        char buffer[sizeof(header) + sizeof(response)];
+        memcpy(buffer, &header, sizeof(header));
+        memcpy(buffer + sizeof(header), &response, sizeof(response));
+        return session.Send(buffer, sizeof(buffer));
     }
 }
 
@@ -53,126 +70,84 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
     EnterGameRequest request;
     request.protocolVersion = 0;
     memcpy(&request, payload, payloadSize);
-
     EnterGameResponse response;
-
     if (request.protocolVersion != GAME_PROTOCOL_VERSION)
-    {
         response.result = EnterGameResult::ProtocolMismatch;
-    }
     else if (session.IsAuthenticated())
-    {
         response.result = EnterGameResult::AlreadyAuthenticated;
-    }
+    else if (session.IsAuthenticating())
+        response.result = EnterGameResult::AuthenticationPending;
     else
     {
         AuthTicket ticket;
-
-        // LoginServer가 등록한 일회용 인증 티켓을 소비한다.
-        // accountId와 characterId는 클라이언트가 아니라 인증된 티켓을 기준으로 사용한다.
+        // 인증 티켓은 한 번만 소비하고 DB 조회 중에는 같은 세션의 추가 입장을 막는다.
         if (!session.GetAuthTicketManager().Consume(request.authKey, ticket))
-        {
             response.result = EnterGameResult::InvalidAuthKey;
-        }
+        else if (session.BeginCharacterLoad(ticket))
+            return true;
+        else
+            response.result = EnterGameResult::CharacterLoadFailed;
+    }
+    return SendEnterResult(session, response);
+}
+
+bool GamePacketHandler::CompleteEnterGame(GameSession& session, const AuthTicket& ticket, CharacterLoadResult loadResult)
+{
+    if (!session.IsConnected())
+        return true;
+
+    EnterGameResponse response;
+    if (loadResult.status != CharacterLoadStatus::Success)
+    {
+        response.result = EnterGameResult::CharacterLoadFailed;
+        std::cerr << "Character load failed: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << '\n';
+    }
+    else
+    {
+        CharacterData& character = loadResult.character;
+        auto player = std::make_unique<Player>(character.characterId, character.accountId, std::move(character.name), character.level);
+        if (!session.GetPlayerManager().Add(*player))
+            response.result = EnterGameResult::AlreadyInGame;
         else
         {
-            CharacterLoadResult loadResult = session.GetCharacterRepository().FindById(ticket.accountId, ticket.characterId);
-
-            if (loadResult.status != CharacterLoadStatus::Success)
+            Map* map = session.GetMapManager().FindMap(START_MAP_ID);
+            if (map == nullptr || !map->AddPlayer(*player))
             {
-                response.result = EnterGameResult::CharacterLoadFailed;
-
-                if (loadResult.status == CharacterLoadStatus::NotFound)
-                {
-                    std::cerr << "Character not found: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << '\n';
-                }
-                else
-                {
-                    std::cerr << "Character load failed: accountId=" << ticket.accountId << " characterId=" << ticket.characterId << '\n';
-                }
+                session.GetPlayerManager().Remove(*player);
+                response.result = EnterGameResult::MapEnterFailed;
             }
             else
             {
-                CharacterData& character = loadResult.character;
-                auto player = std::make_unique<Player>(character.characterId, character.accountId, std::move(character.name), character.level);
-
-                if (!session.GetPlayerManager().Add(*player))
-                {
-                    response.result = EnterGameResult::AlreadyInGame;
-
-                    std::cerr << "Player already in game: accountId=" << player->GetAccountId()
-                        << " characterId=" << player->GetCharacterId() << '\n';
-                }
-                else
-                {
-                    Map* map = session.GetMapManager().FindMap(START_MAP_ID);
-
-                    if (map == nullptr || !map->AddPlayer(*player))
-                    {
-                        session.GetPlayerManager().Remove(*player);
-                        response.result = EnterGameResult::MapEnterFailed;
-
-                        std::cerr << "Player map enter failed: accountId=" << player->GetAccountId()
-                            << " characterId=" << player->GetCharacterId()
-                            << " mapId=" << START_MAP_ID << '\n';
-                    }
-                    else
-                    {
-                        player->SetPosition(map->GetSpawnX(), map->GetSpawnY());
-                        player->SetSession(&session);
-                        session.SetAccountId(character.accountId);
-                        session.SetCharacterId(character.characterId);
-                        session.SetPlayer(std::move(player));
-                        session.SetAuthenticated(true);
-
-                        const Player* enteredPlayer = session.GetPlayer();
-
-                        if (enteredPlayer == nullptr)
-                            return false;
-
-                        response.result = EnterGameResult::Success;
-                        response.characterId = enteredPlayer->GetCharacterId();
-                        strcpy_s(response.name, enteredPlayer->GetName().c_str());
-                        response.level = enteredPlayer->GetLevel();
-                        response.x = enteredPlayer->GetX();
-                        response.y = enteredPlayer->GetY();
-
-                        std::cout << "Game Session Authenticated: accountId=" << enteredPlayer->GetAccountId()
-                            << " characterId=" << enteredPlayer->GetCharacterId()
-                            << " name=" << enteredPlayer->GetName()
-                            << " level=" << enteredPlayer->GetLevel()
-                            << " mapId=" << enteredPlayer->GetMap()->GetMapId() << '\n';
-                    }
-                }
+                player->SetPosition(map->GetSpawnX(), map->GetSpawnY());
+                player->SetSession(&session);
+                session.SetAccountId(character.accountId);
+                session.SetCharacterId(character.characterId);
+                session.SetPlayer(std::move(player));
+                session.SetAuthenticated(true);
+                const Player* enteredPlayer = session.GetPlayer();
+                response.result = EnterGameResult::Success;
+                response.characterId = enteredPlayer->GetCharacterId();
+                if (!CopyCharacterName(response.name, enteredPlayer->GetName()))
+                    return false;
+                response.level = enteredPlayer->GetLevel();
+                response.x = enteredPlayer->GetX();
+                response.y = enteredPlayer->GetY();
+                std::cout << "Game Session Authenticated: accountId=" << enteredPlayer->GetAccountId()
+                    << " characterId=" << enteredPlayer->GetCharacterId() << " mapId=" << map->GetMapId() << '\n';
             }
         }
     }
 
-    PacketHeader header;
-    header.size = sizeof(PacketHeader) + sizeof(EnterGameResponse);
-    header.opcode = static_cast<uint16_t>(GamePacketOpcode::EnterGameResponse);
-
-    char sendBuffer[sizeof(PacketHeader) + sizeof(EnterGameResponse)];
-
-    memcpy(sendBuffer, &header, sizeof(header));
-    memcpy(sendBuffer + sizeof(header), &response, sizeof(response));
-
-    if (!session.Send(sendBuffer, sizeof(sendBuffer)))
+    if (!SendEnterResult(session, response))
         return false;
-
     if (response.result == EnterGameResult::Success)
     {
-        Player* enteredPlayer = session.GetPlayer();
-        if (enteredPlayer == nullptr || enteredPlayer->GetMap() == nullptr)
-            return false;
-
-        if (!enteredPlayer->GetMap()->SendMapInfo(*enteredPlayer) || !enteredPlayer->GetMap()->SendGeometry(*enteredPlayer) || !enteredPlayer->GetMap()->NotifyPlayerEntered(*enteredPlayer))
-            return false;
+        Player& player = *session.GetPlayer();
+        Map& map = *player.GetMap();
+        return map.SendMapInfo(player) && map.SendGeometry(player) && map.NotifyPlayerEntered(player);
     }
-
     return true;
 }
-
 
 bool GamePacketHandler::HandleMove(GameSession& session, const char* payload, uint16_t payloadSize)
 {
@@ -310,12 +285,19 @@ bool GamePacketHandler::HandleChat(GameSession& session, const char* payload, ui
 
     ChatRequest request;
     memcpy(&request, payload, sizeof(request));
-    request.message[MAX_CHAT_MESSAGE_LENGTH - 1] = '\0';
+    return ChatService(session.GetPlayerManager()).SendMap(*player, request);
+}
 
-    if (request.message[0] == '\0')
-        return true;
-
-    return player->GetMap()->NotifyPlayerChat(*player, request.message);
+bool GamePacketHandler::HandleWhisper(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || payloadSize != sizeof(WhisperRequest))
+        return false;
+    Player* player = session.GetPlayer();
+    if (player == nullptr || player->GetMap() == nullptr)
+        return false;
+    WhisperRequest request;
+    memcpy(&request, payload, sizeof(request));
+    return ChatService(session.GetPlayerManager()).SendWhisper(*player, request);
 }
 
 bool GamePacketHandler::HandleMovementInput(GameSession& session, const char* payload, uint16_t payloadSize)

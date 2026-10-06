@@ -34,13 +34,28 @@ bool LoginPacketHandler::Handle(LoginSession& session, uint16_t opcode, const ch
 
 bool LoginPacketHandler::HandleLogin(LoginSession& session, const char* payload, uint16_t payloadSize)
 {
-    if (payloadSize != sizeof(LoginRequest))
+    if (payloadSize != sizeof(LoginRequest) && payloadSize != MAX_LOGIN_ID_LENGTH + MAX_PASSWORD_LENGTH)
         return false;
 
     LoginRequest request;
-    memcpy(&request, payload, sizeof(request));
+    request.protocolVersion = 0;
+    memcpy(&request, payload, payloadSize);
 
     LoginResponse response;
+
+    // 이전 로그인 패킷은 캐릭터 이름 크기가 다르므로 목록 요청 전에 버전을 거절한다.
+    if (request.protocolVersion != LOGIN_PROTOCOL_VERSION)
+    {
+        response.result = LoginResult::ProtocolMismatch;
+        PacketHeader header{ static_cast<uint16_t>(sizeof(PacketHeader) + sizeof(response)), static_cast<uint16_t>(LoginPacketOpcode::LoginResponse) };
+        char buffer[sizeof(header) + sizeof(response)];
+        memcpy(buffer, &header, sizeof(header));
+        memcpy(buffer + sizeof(header), &response, sizeof(response));
+        return session.Send(buffer, sizeof(buffer));
+    }
+
+    if (session.IsAuthenticated())
+        return false;
 
     // wire packet의 고정 길이 문자열이 범위 안에서 null-terminate 되었는지 검증한다.
     const size_t loginIdLength = strnlen_s(request.loginId, MAX_LOGIN_ID_LENGTH);

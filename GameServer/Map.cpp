@@ -1,5 +1,5 @@
-﻿#include "Map.h"
-#include "GameSession.h"
+#include "Map.h"
+#include "../ServerCore/Session.h"
 #include "Monster.h"
 #include "Player.h"
 #include "../Protocol/GamePacket.h"
@@ -12,7 +12,7 @@
 namespace
 {
     template<typename T>
-    bool SendPacket(GameSession& session, GamePacketOpcode opcode, const T& payload)
+    bool SendPacket(Session& session, GamePacketOpcode opcode, const T& payload)
     {
         static_assert(sizeof(T) + sizeof(PacketHeader) <= MAX_PACKET_SIZE);
         PacketHeader header;
@@ -24,11 +24,12 @@ namespace
         return session.Send(buffer, sizeof(buffer));
     }
 
-    bool SendPlayerEnter(GameSession& session, const Player& player)
+    bool SendPlayerEnter(Session& session, const Player& player)
     {
         PlayerEnterMap payload;
         payload.characterId = player.GetCharacterId();
-        strcpy_s(payload.name, player.GetName().c_str());
+        if (!CopyCharacterName(payload.name, player.GetName()))
+            return false;
         payload.level = player.GetLevel();
         payload.x = player.GetX();
         payload.y = player.GetY();
@@ -43,7 +44,7 @@ namespace
         return session.Send(sendBuffer, sizeof(sendBuffer));
     }
 
-    bool SendPlayerMove(GameSession& session, const Player& player)
+    bool SendPlayerMove(Session& session, const Player& player)
     {
         PlayerMove payload;
         payload.characterId = player.GetCharacterId();
@@ -60,7 +61,7 @@ namespace
         return session.Send(sendBuffer, sizeof(sendBuffer));
     }
 
-    bool SendPlayerLeave(GameSession& session, uint32_t characterId)
+    bool SendPlayerLeave(Session& session, uint32_t characterId)
     {
         PlayerLeaveMap payload;
         payload.characterId = characterId;
@@ -75,7 +76,7 @@ namespace
         return session.Send(sendBuffer, sizeof(sendBuffer));
     }
 
-    bool SendMonsterEnter(GameSession& session, const Monster& monster)
+    bool SendMonsterEnter(Session& session, const Monster& monster)
     {
         MonsterEnterMap payload;
         payload.monsterId = monster.GetMonsterId();
@@ -92,7 +93,7 @@ namespace
         return session.Send(sendBuffer, sizeof(sendBuffer));
     }
 
-    bool SendPlayerChat(GameSession& session, const Player& player, const char* message)
+    bool SendPlayerChat(Session& session, const Player& player, const char* message)
     {
         PlayerChat payload;
         payload.characterId = player.GetCharacterId();
@@ -174,7 +175,7 @@ MoveResult Map::MovePlayer(Player& player, int32_t x, int32_t y)
 
 bool Map::SendMapInfo(Player& player)
 {
-    GameSession* session = player.GetSession();
+    Session* session = player.GetSession();
     if (session == nullptr)
         return false;
 
@@ -227,7 +228,7 @@ void Map::RemoveMonster(Monster& monster)
 
 bool Map::NotifyPlayerEntered(Player& player)
 {
-    GameSession* enteredSession = player.GetSession();
+    Session* enteredSession = player.GetSession();
     if (enteredSession == nullptr)
         return false;
 
@@ -236,18 +237,19 @@ bool Map::NotifyPlayerEntered(Player& player)
         if (existingPlayer == &player)
             continue;
 
-        GameSession* existingSession = existingPlayer->GetSession();
-        if (existingSession == nullptr)
+        Session* existingSession = existingPlayer->GetSession();
+        if (existingSession == nullptr || !existingSession->IsConnected())
             continue;
 
         if (!SendPlayerEnter(*enteredSession, *existingPlayer))
             return false;
 
-        if (!SendPlayerEnter(*existingSession, player))
+        if (IsPlatformer() && !SendMovementState(player, *existingPlayer))
             return false;
 
-        if (IsPlatformer() && (!SendMovementState(player, *existingPlayer) || !SendMovementState(*existingPlayer, player)))
-            return false;
+        // 기존 Player의 전송 실패는 해당 연결에만 적용하고 입장자의 전송은 계속한다.
+        if (!SendPlayerEnter(*existingSession, player) || (IsPlatformer() && !SendMovementState(*existingPlayer, player)))
+            existingSession->RequestClose();
     }
 
     for (const auto& [monsterId, monster] : _monsters)
@@ -272,7 +274,7 @@ bool Map::IsPlatformer() const
 
 bool Map::SendGeometry(Player& player)
 {
-    GameSession* session = player.GetSession();
+    Session* session = player.GetSession();
     if (_geometry == nullptr || session == nullptr)
         return false;
 
@@ -347,7 +349,7 @@ void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
     if (!IsPlatformer())
         return;
 
-    std::vector<GameSession*> failed;
+    std::vector<Session*> failed;
     for (const auto& entry : _players)
     {
         Player& player = *entry.second;
@@ -380,11 +382,11 @@ void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
         }
     }
 
-    // 연결 종료 콜백은 Player를 제거하므로 순회가 끝난 뒤 처리한다.
-    for (GameSession* session : failed)
+    // 연결 종료 콜백은 Player를 제거하므로 SessionManager에서 처리하도록 예약한다.
+    for (Session* session : failed)
     {
         if (session != nullptr)
-            session->Close();
+            session->RequestClose();
     }
 }
 
@@ -395,11 +397,12 @@ void Map::NotifyPlayerLeaving(Player& player)
         if (existingPlayer == &player)
             continue;
 
-        GameSession* existingSession = existingPlayer->GetSession();
+        Session* existingSession = existingPlayer->GetSession();
         if (existingSession == nullptr)
             continue;
 
-        SendPlayerLeave(*existingSession, player.GetCharacterId());
+        if (!SendPlayerLeave(*existingSession, player.GetCharacterId()))
+            existingSession->RequestClose();
     }
 }
 
@@ -410,12 +413,12 @@ bool Map::NotifyPlayerMoved(Player& player)
         if (existingPlayer == &player)
             continue;
 
-        GameSession* existingSession = existingPlayer->GetSession();
+        Session* existingSession = existingPlayer->GetSession();
         if (existingSession == nullptr)
             continue;
 
         if (!SendPlayerMove(*existingSession, player))
-            return false;
+            existingSession->RequestClose();
     }
 
     return true;
@@ -425,12 +428,12 @@ bool Map::NotifyPlayerChat(Player& player, const char* message)
 {
     for (const auto& [characterId, existingPlayer] : _players)
     {
-        GameSession* existingSession = existingPlayer->GetSession();
+        Session* existingSession = existingPlayer->GetSession();
         if (existingSession == nullptr)
             continue;
 
         if (!SendPlayerChat(*existingSession, player, message))
-            return false;
+            existingSession->RequestClose();
     }
 
     return true;

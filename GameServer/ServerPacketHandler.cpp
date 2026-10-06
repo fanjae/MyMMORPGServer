@@ -40,7 +40,7 @@ bool ServerPacketHandler::HandleRegisterAuthTicket(ServerSession& session, const
     {
         response.result = RegisterAuthTicketResult::Success;
 
-        std::cout << "Auth Ticket Registered: accountId=" << request.accountId << " characterId=" << request.characterId << " authKey=" << request.authKey << "\n";
+        std::cout << "Auth Ticket Registered: accountId=" << request.accountId << " characterId=" << request.characterId << '\n';
     }
 
     PacketHeader header;

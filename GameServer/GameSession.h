@@ -3,6 +3,8 @@
 #include "../ServerCore/Session.h"
 
 #include <memory>
+#include "CharacterRepository.h"
+#include "AuthTicketManager.h"
 
 class AuthTicketManager;
 class CharacterRepository;
@@ -34,6 +36,9 @@ public:
 
     Player* GetPlayer() const { return _player.get(); }
     void SetPlayer(std::unique_ptr<Player> player);
+    bool BeginCharacterLoad(const AuthTicket& ticket);
+    bool IsAuthenticating() const { return _characterLoad.valid(); }
+    void Update() override;
 
 protected:
     bool OnPacket(uint16_t opcode, const char* payload, uint16_t payloadSize) override;
@@ -49,4 +54,8 @@ private:
     uint32_t _accountId = 0;
     uint32_t _characterId = 0;
     bool _authenticated = false;
+    AuthTicket _pendingTicket;
+    std::future<CharacterLoadResult> _characterLoad;
+    std::shared_ptr<std::atomic<bool>> _loadCanceled;
+    std::chrono::steady_clock::time_point _loadDeadline;
 };

@@ -155,9 +155,15 @@ void MapManager::Advance()
     uint32_t count = 0;
     while (now >= _nextTick && count < 5)
     {
+        auto tickStart = std::chrono::steady_clock::now();
+        auto lag = std::chrono::duration_cast<std::chrono::milliseconds>(tickStart - _nextTick).count();
+        _maxTickLagMilliseconds = (std::max)(_maxTickLagMilliseconds, static_cast<int64_t>(lag));
         ++_tick;
         for (const auto& entry : _maps)
             entry.second->Tick(_tick, _nextTick);
+
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tickStart).count();
+        _maxTickMicroseconds = (std::max)(_maxTickMicroseconds, static_cast<int64_t>(duration));
 
         _nextTick += std::chrono::milliseconds(20);
         ++count;
@@ -167,8 +173,23 @@ void MapManager::Advance()
     if (now >= _nextTick)
     {
         std::cerr << "Map tick catch-up limit reached\n";
+        ++_catchUpLimits;
         _nextTick = now + std::chrono::milliseconds(20);
     }
+}
+
+void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
+{
+    size_t players = 0;
+    for (const auto& entry : _maps)
+        players += entry.second->GetPlayerCount();
+    // 일정 구간의 최대 tick 처리 시간과 누적 송신량을 함께 기록해 부하를 비교한다.
+    std::cout << "Server metrics: sessions=" << sessions << " players=" << players
+        << " queuedBytes=" << queuedBytes << " maxTickUs=" << _maxTickMicroseconds
+        << " maxTickLagMs=" << _maxTickLagMilliseconds << " catchUpLimits=" << _catchUpLimits << '\n';
+    _maxTickMicroseconds = 0;
+    _maxTickLagMilliseconds = 0;
+    _catchUpLimits = 0;
 }
 
 uint32_t MapManager::GetWaitMilliseconds() const

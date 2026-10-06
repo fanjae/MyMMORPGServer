@@ -1,6 +1,7 @@
 ﻿#include "../Protocol/GamePacket.h"
 #include "../Protocol/LoginPacket.h"
 #include "../ServerCore/Packet.h"
+#include "../ServerCore/BlockingSocket.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -26,34 +27,12 @@ namespace
 
     bool SendAll(SOCKET socket, const char* buffer, int32_t size)
     {
-        int32_t totalSentBytes = 0;
-
-        while (totalSentBytes < size)
-        {
-            int32_t sentBytes = send(socket, buffer + totalSentBytes, size - totalSentBytes, 0);
-            if (sentBytes == SOCKET_ERROR || sentBytes == 0)
-                return false;
-
-            totalSentBytes += sentBytes;
-        }
-
-        return true;
+        return BlockingSocket::Transfer(socket, const_cast<char*>(buffer), size, true, std::chrono::steady_clock::now() + std::chrono::seconds(5));
     }
 
     bool RecvAll(SOCKET socket, char* buffer, int32_t size)
     {
-        int32_t totalRecvBytes = 0;
-
-        while (totalRecvBytes < size)
-        {
-            int32_t recvBytes = recv(socket, buffer + totalRecvBytes, size - totalRecvBytes, 0);
-            if (recvBytes == SOCKET_ERROR || recvBytes == 0)
-                return false;
-
-            totalRecvBytes += recvBytes;
-        }
-
-        return true;
+        return BlockingSocket::Transfer(socket, buffer, size, false, std::chrono::steady_clock::now() + std::chrono::seconds(5));
     }
 
     template<typename TOpcode, typename T>
@@ -110,7 +89,7 @@ namespace
             return INVALID_SOCKET;
         }
 
-        if (connect(socket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == SOCKET_ERROR)
+        if (!BlockingSocket::Connect(socket, address, std::chrono::steady_clock::now() + std::chrono::seconds(5)))
         {
             closesocket(socket);
             return INVALID_SOCKET;

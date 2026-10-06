@@ -1,11 +1,12 @@
 ﻿#pragma once
 
 #include <cstdint>
+#include "CharacterName.h"
 
 constexpr uint32_t MAX_LOGIN_ID_LENGTH = 32;
 constexpr uint32_t MAX_PASSWORD_LENGTH = 64;
 
-constexpr uint32_t MAX_CHARACTER_NAME_LENGTH = 16;
+constexpr uint32_t LOGIN_PROTOCOL_VERSION = 2;
 constexpr uint32_t MAX_CHARACTER_COUNT = 3;
 
 enum class LoginPacketOpcode : uint16_t
@@ -22,7 +23,8 @@ enum class LoginResult : uint8_t
 {
     Success = 0,
     InvalidCredential = 1,
-    ServerError = 2
+    ServerError = 2,
+    ProtocolMismatch = 3
 };
 
 enum class CharacterListResult : uint8_t
@@ -44,6 +46,7 @@ struct LoginRequest
 {
     char loginId[MAX_LOGIN_ID_LENGTH] = {};
     char password[MAX_PASSWORD_LENGTH] = {};
+    uint32_t protocolVersion = LOGIN_PROTOCOL_VERSION;
 };
 
 struct LoginResponse

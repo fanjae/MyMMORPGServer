@@ -6,6 +6,7 @@
 #include "../ServerCore/IocpEvent.h"
 #include "../ServerCore/IocpWorker.h"
 #include "../ServerCore/SessionManager.h"
+#include "../ServerCore/ServerListenConfig.h"
 #include "../ServerCore/DatabaseConnection.h"
 #include "AuthTicketManager.h"
 #include "CharacterRepository.h"
@@ -41,6 +42,15 @@ namespace
 
 int main(int argc, char* argv[])
 {
+    // 테스트 서버를 강제 종료해도 마지막 진단 로그가 파일에 남도록 즉시 출력한다.
+    std::cout << std::unitbuf;
+    ServerListenConfig listenConfig;
+    std::string configError;
+    if (!ServerListenConfig::Load(listenConfig, configError))
+    {
+        std::cerr << configError << '\n';
+        return 1;
+    }
     MapManager mapManager;
     std::filesystem::path mapPath = argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::absolute(argv[0]).parent_path() / "data" / "maps.csv";
     if (!mapManager.LoadMaps(mapPath.string()))
@@ -86,7 +96,8 @@ int main(int argc, char* argv[])
 
     // 7777: LoginServer에서 authKey를 받은 게임 클라이언트가 접속하는 포트.
     // 7778: LoginServer가 게임 입장용 인증 티켓을 등록하는 서버 간 통신 포트.
-    NetAddress gameAddress(L"127.0.0.1", 7777);
+    NetAddress gameAddress(listenConfig.GetClientBindIp(), 7777);
+    // 인증 티켓 등록은 같은 PC의 LoginServer만 접근하는 로컬 연결로 유지한다.
     NetAddress serverAddress(L"127.0.0.1", 7778);
 
     Listener gameListener;
@@ -94,12 +105,14 @@ int main(int argc, char* argv[])
 
     if (!gameListener.Start(gameAddress))
     {
+        std::cerr << "GameServer startup failed on " << listenConfig.clientBindIp << ":7777\n";
         SocketUtils::Clear();
         return 1;
     }
 
     if (!serverListener.Start(serverAddress))
     {
+        std::cerr << "GameServer ticket listener startup failed on 127.0.0.1:7778\n";
         gameListener.Close();
         SocketUtils::Clear();
         return 1;
@@ -158,9 +171,11 @@ int main(int argc, char* argv[])
             return std::make_unique<ServerSession>(socket, authTicketManager);
         });
 
-    std::cout << "Waiting for data...\n";
+    std::cout << "GameServer listening on " << listenConfig.clientBindIp << ":7777\n";
+    std::cout << "GameServer ticket listener on 127.0.0.1:7778\n";
 
     auto nextCleanup = std::chrono::steady_clock::now();
+    auto nextMetrics = nextCleanup + std::chrono::seconds(5);
     while (true)
     {
         mapManager.Advance();
@@ -173,9 +188,15 @@ int main(int argc, char* argv[])
         }
 
         sessionManager.Cleanup();
+        if (std::chrono::steady_clock::now() >= nextMetrics)
+        {
+            mapManager.LogMetrics(sessionManager.GetSessionCount(), sessionManager.GetQueuedSendBytes());
+            nextMetrics = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        }
         if (std::chrono::steady_clock::now() >= nextCleanup)
         {
             authTicketManager.CleanupExpired();
+            playerManager.GetChatLimiter().Cleanup();
             nextCleanup = std::chrono::steady_clock::now() + std::chrono::seconds(1);
         }
     }

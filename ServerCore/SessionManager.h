@@ -14,6 +14,8 @@ class SessionManager
 public:
     void Add(std::unique_ptr<Session> session);
     void Cleanup();
+    size_t GetSessionCount() const { return _sessions.size(); }
+    size_t GetQueuedSendBytes() const;
 
 private:
     std::vector<std::unique_ptr<Session>> _sessions;

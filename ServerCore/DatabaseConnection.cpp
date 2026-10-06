@@ -17,7 +17,16 @@ bool DatabaseConnection::Connect(const std::string& host, const std::string& use
     {
         sql::Driver* driver = sql::mysql::get_driver_instance();
 
-        _connection.reset(driver->connect(host, user, password));
+        // DB 연결과 응답 대기가 서버 처리를 무기한 막지 않도록 초 단위로 제한한다.
+        sql::ConnectOptionsMap options;
+        options["hostName"] = host;
+        options["userName"] = user;
+        options["password"] = password;
+        options["OPT_CONNECT_TIMEOUT"] = 3;
+        options["OPT_READ_TIMEOUT"] = 3;
+        options["OPT_WRITE_TIMEOUT"] = 3;
+        options["OPT_CHARSET_NAME"] = std::string("utf8mb4");
+        _connection.reset(driver->connect(options));
         _connection->setSchema(database);
 
         return true;

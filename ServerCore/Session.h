@@ -19,14 +19,20 @@ public:
     Session& operator=(const Session&) = delete;
 
     SOCKET GetSocket() const { return _socket; }
-    bool IsConnected() const { return _socket != INVALID_SOCKET; }
+    bool IsConnected() const { return _socket != INVALID_SOCKET && !_closeRequested && !_disconnectHandled; }
+    bool IsCloseRequested() const { return _closeRequested; }
+    void RequestClose() { _closeRequested = true; }
+    virtual void Update() {}
+
+    static constexpr size_t MaxQueuedSendBytes = 1024 * 1024;
+    size_t GetQueuedSendBytes() const { return _queuedSendBytes; }
 
     // closesocket 이후에도 취소된 overlapped I/O의 completion이 도착할 수 있으므로
     // socket이 닫히고 모든 pending I/O가 회수된 뒤에만 Session을 파괴한다.
-    bool CanDestroy() const { return !IsConnected() && !_recvPending && !_sendPending; }
+    bool CanDestroy() const { return _socket == INVALID_SOCKET && !_recvPending && !_sendPending; }
 
     bool PostRecv();
-    bool Send(const char* data, int32_t size);
+    virtual bool Send(const char* data, int32_t size);
     bool Dispatch(IocpEvent* event, DWORD bytes, bool ioSuccess);
     bool OnRecv(DWORD bytes);
     void Close();
@@ -57,7 +63,9 @@ private:
     SendEvent _sendEvent;
     RecvBuffer _recvBuffer;
     std::queue<SendBuffer> _sendQueue;
+    size_t _queuedSendBytes = 0;
     bool _recvPending = false;
     bool _sendPending = false;
     bool _disconnectHandled = false; 
+    bool _closeRequested = false;
 };

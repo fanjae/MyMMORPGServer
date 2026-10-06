@@ -26,6 +26,7 @@ public:
     int32_t GetSpawnX() const { return _definition.spawnX; }
     int32_t GetSpawnY() const { return _definition.spawnY; }
     const MapDefinition& GetDefinition() const { return _definition; }
+    size_t GetPlayerCount() const { return _players.size(); }
 
     bool AddPlayer(Player& player);
     void RemovePlayer(Player& player);

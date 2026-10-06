@@ -4,11 +4,21 @@
 
 bool SocketUtils::Bind(SOCKET socket, const NetAddress& address)
 {
+    if (!address.IsValid())
+    {
+        WSASetLastError(WSAEINVAL);
+        return false;
+    }
     return bind(socket, reinterpret_cast<const SOCKADDR*>(&address.GetAddress()), sizeof(SOCKADDR_IN)) != SOCKET_ERROR;
 }
 
 bool SocketUtils::Connect(SOCKET socket, const NetAddress& address)
 {
+    if (!address.IsValid())
+    {
+        WSASetLastError(WSAEINVAL);
+        return false;
+    }
     return connect(socket, reinterpret_cast<const SOCKADDR*>(&address.GetAddress()), sizeof(SOCKADDR_IN)) != SOCKET_ERROR;
 }
 

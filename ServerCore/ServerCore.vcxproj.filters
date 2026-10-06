@@ -18,6 +18,12 @@
     <ClInclude Include="pch.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="BlockingSocket.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="ServerListenConfig.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
     <ClInclude Include="SocketUtils.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>

@@ -4,6 +4,7 @@
 #include "../ServerCore/IocpCore.h"
 #include "../ServerCore/IocpWorker.h"
 #include "../ServerCore/SessionManager.h"
+#include "../ServerCore/ServerListenConfig.h"
 
 #include "AccountRepository.h"
 #include "AuthKeyGenerator.h"
@@ -39,6 +40,14 @@ namespace
 
 int main()
 {
+    std::cout << std::unitbuf;
+    ServerListenConfig listenConfig;
+    std::string configError;
+    if (!ServerListenConfig::Load(listenConfig, configError))
+    {
+        std::cerr << configError << '\n';
+        return 1;
+    }
     const std::string dbHost = GetEnvironmentVariable("DB_HOST");
     const std::string dbUser = GetEnvironmentVariable("DB_USER");
     const std::string dbPassword = GetEnvironmentVariable("DB_PASSWORD");
@@ -75,11 +84,12 @@ int main()
         return 1;
     }
 
-    NetAddress address(L"127.0.0.1", 7776);
+    NetAddress address(listenConfig.GetClientBindIp(), 7776);
     Listener listener;
 
     if (!listener.Start(address))
     {
+        std::cerr << "LoginServer startup failed on " << listenConfig.clientBindIp << ":7776\n";
         SocketUtils::Clear();
         return 1;
     }
@@ -111,7 +121,7 @@ int main()
             return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator, accountRepository, characterRepository, passwordVerifier);
         });
 
-    std::cout << "Login Server Started\n";
+    std::cout << "LoginServer listening on " << listenConfig.clientBindIp << ":7776\n";
 
     while (true)
     {

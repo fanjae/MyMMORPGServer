@@ -5,6 +5,7 @@
 #include "Listener.h"
 #include "Session.h"
 #include "SessionManager.h"
+#include "SocketUtils.h"
 
 #include <iostream>
 
@@ -52,15 +53,22 @@ bool IocpWorker::Dispatch(DWORD timeoutMs)
             ListenerContext& context = it->second;
             AcceptEvent* acceptEvent = static_cast<AcceptEvent*>(event);
 
-            if (!context.listener->CompleteAccept(*acceptEvent))
-                return false;
+            // 하나의 접속 수락이 실패해도 listen socket의 다음 Accept는 유지한다.
+            if (!ioSuccess || !context.listener->CompleteAccept(*acceptEvent))
+            {
+                SocketUtils::Close(acceptEvent->acceptSocket);
+                return context.listener->PostAccept();
+            }
 
             // AcceptEvent가 보관하던 accepted socket의 소유권을 새 Session으로 이전한다.
             // Session 생성 후에는 AcceptEvent가 해당 socket을 다시 닫지 않도록 비운다.
 
             auto session = context.sessionFactory(acceptEvent->acceptSocket);
             if (session == nullptr)
-                return false;
+            {
+                SocketUtils::Close(acceptEvent->acceptSocket);
+                return context.listener->PostAccept();
+            }
 
             acceptEvent->acceptSocket = INVALID_SOCKET;
 
@@ -68,10 +76,16 @@ bool IocpWorker::Dispatch(DWORD timeoutMs)
             // 이후 Recv/Send completion은 이 주소를 통해 해당 Session으로 dispatch된다.
             // pending I/O가 남아 있는 동안 Session 주소가 유효해야 한다.
             if (!_iocp.Register(reinterpret_cast<HANDLE>(session->GetSocket()), reinterpret_cast<ULONG_PTR>(session.get())))
-                return false;
+            {
+                session->Close();
+                return context.listener->PostAccept();
+            }
 
             if (!session->PostRecv())
-                return false;
+            {
+                session->Close();
+                return context.listener->PostAccept();
+            }
 
             _sessionManager.Add(std::move(session));
 

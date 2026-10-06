@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "MovementValidator.h"
 #include "MovementSimulation.h"
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 
-class GameSession;
+class Session;
 class Map;
 
 class Player
@@ -24,8 +24,8 @@ public:
     int32_t GetY() const { return _y; }
     void SetPosition(int32_t x, int32_t y) { _x = x; _y = y; }
 
-    GameSession* GetSession() const { return _session; }
-    void SetSession(GameSession* session) { _session = session; }
+    Session* GetSession() const { return _session; }
+    void SetSession(Session* session) { _session = session; }
 
     Map* GetMap() const { return _map; }
     void SetMap(Map* map) { _map = map; }
@@ -47,7 +47,7 @@ private:
     uint16_t _level = 0;
     int32_t _x = 0;
     int32_t _y = 0;
-    GameSession* _session = nullptr;
+    Session* _session = nullptr;
     Map* _map = nullptr;
     MovementValidator _movementValidator;
     uint64_t _lastMoveSequence = 0;

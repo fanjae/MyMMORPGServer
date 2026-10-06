@@ -3,6 +3,7 @@
 #include "Listener.h"
 #include "SocketUtils.h"
 #include "NetAddress.h"
+#include <iostream>
 
 Listener::~Listener()
 {
@@ -20,12 +21,14 @@ bool Listener::Start(const NetAddress& address)
 
     if (!SocketUtils::Bind(_listenSocket, address))
     {
+        std::cerr << "Listener bind failed: socketError=" << WSAGetLastError() << '\n';
         Close();
         return false;
     }
 
     if (!SocketUtils::Listen(_listenSocket))
     {
+        std::cerr << "Listener listen failed: socketError=" << WSAGetLastError() << '\n';
         Close();
         return false;
     }

@@ -7,5 +7,10 @@
 class GameServerClient
 {
 public:
+    explicit GameServerClient(uint16_t port = 7778, uint32_t timeoutMs = 3000) : _port(port), _timeoutMs(timeoutMs) {}
     bool RegisterAuthTicket(uint32_t accountId, uint32_t characterId, uint64_t authKey);
+
+private:
+    uint16_t _port;
+    uint32_t _timeoutMs;
 };

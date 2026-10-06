@@ -11,7 +11,9 @@ public:
 
     SOCKADDR_IN& GetAddress() { return _address; }
     const SOCKADDR_IN& GetAddress() const { return _address; }
+    bool IsValid() const { return _valid; }
 
 private:
     SOCKADDR_IN _address = {};
+    bool _valid = false;
 };

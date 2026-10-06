@@ -3,26 +3,15 @@
 #include "../ServerCore/NetAddress.h"
 #include "../ServerCore/Packet.h"
 #include "../ServerCore/SocketUtils.h"
+#include "../ServerCore/BlockingSocket.h"
 
 #include <cstring>
 
 namespace
 {
-    bool RecvAll(SOCKET socket, char* buffer, int32_t size)
+    bool RecvAll(SOCKET socket, char* buffer, int32_t size, BlockingSocket::Deadline deadline)
     {
-        int32_t totalRecvBytes = 0;
-
-        while (totalRecvBytes < size)
-        {
-            int32_t recvBytes = recv(socket, buffer + totalRecvBytes, size - totalRecvBytes, 0);
-
-            if (recvBytes == SOCKET_ERROR || recvBytes == 0)
-                return false;
-
-            totalRecvBytes += recvBytes;
-        }
-
-        return true;
+        return BlockingSocket::Transfer(socket, buffer, size, false, deadline);
     }
 }
 
@@ -34,9 +23,10 @@ bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint32_t character
     if (socket == INVALID_SOCKET)
         return false;
 
-    NetAddress address(L"127.0.0.1", 7778);
+    NetAddress address(L"127.0.0.1", _port);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(_timeoutMs);
 
-    if (!SocketUtils::Connect(socket, address))
+    if (!BlockingSocket::Connect(socket, address.GetAddress(), deadline))
     {
         SocketUtils::Close(socket);
         return false;
@@ -56,25 +46,15 @@ bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint32_t character
     memcpy(sendBuffer, &header, sizeof(header));
     memcpy(sendBuffer + sizeof(header), &request, sizeof(request));
 
-    int32_t totalSentBytes = 0;
-    int32_t sendBufferSize = static_cast<int32_t>(sizeof(sendBuffer));
-
-    while (totalSentBytes < sendBufferSize)
+    if (!BlockingSocket::Transfer(socket, sendBuffer, sizeof(sendBuffer), true, deadline))
     {
-        int32_t sentBytes = send(socket, sendBuffer + totalSentBytes, sendBufferSize - totalSentBytes, 0);
-
-        if (sentBytes == SOCKET_ERROR || sentBytes == 0)
-        {
-            SocketUtils::Close(socket);
-            return false;
-        }
-
-        totalSentBytes += sentBytes;
+        SocketUtils::Close(socket);
+        return false;
     }
 
     PacketHeader responseHeader;
 
-    if (!RecvAll(socket, reinterpret_cast<char*>(&responseHeader), sizeof(responseHeader)))
+    if (!RecvAll(socket, reinterpret_cast<char*>(&responseHeader), sizeof(responseHeader), deadline))
     {
         SocketUtils::Close(socket);
         return false;
@@ -94,7 +74,7 @@ bool GameServerClient::RegisterAuthTicket(uint32_t accountId, uint32_t character
 
     RegisterAuthTicketResponse response;
 
-    if (!RecvAll(socket, reinterpret_cast<char*>(&response), sizeof(response)))
+    if (!RecvAll(socket, reinterpret_cast<char*>(&response), sizeof(response), deadline))
     {
         SocketUtils::Close(socket);
         return false;

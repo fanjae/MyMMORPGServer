@@ -1,10 +1,11 @@
 ﻿#pragma once
 
 #include <cstdint>
+#include "CharacterName.h"
 
-constexpr uint32_t MAX_PLAYER_NAME_LENGTH = 16;
+constexpr uint32_t MAX_PLAYER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
-constexpr uint32_t GAME_PROTOCOL_VERSION = 2;
+constexpr uint32_t GAME_PROTOCOL_VERSION = 4;
 
 enum class GamePacketOpcode : uint16_t
 {
@@ -26,7 +27,10 @@ enum class GamePacketOpcode : uint16_t
     MapGeometry = 16,
     Foothold = 17,
     Collider = 18,
-    GeometryEnd = 19
+    GeometryEnd = 19,
+    WhisperRequest = 20,
+    ChatResponse = 21,
+    WhisperMessage = 22
 };
 
 enum class EnterGameResult : uint8_t
@@ -37,7 +41,8 @@ enum class EnterGameResult : uint8_t
     CharacterLoadFailed = 3,
     AlreadyInGame = 4,
     MapEnterFailed = 5,
-    ProtocolMismatch = 6
+    ProtocolMismatch = 6,
+    AuthenticationPending = 7
 };
 
 enum class ChangeMapResult : uint8_t
@@ -59,6 +64,8 @@ enum class MoveResult : uint8_t
 };
 
 enum class MovementStateReason : uint8_t { Normal = 0, Respawned = 1, InputRejected = 2, InputExpired = 3 };
+enum class ChatOperation : uint8_t { Map = 0, Whisper = 1 };
+enum class ChatResult : uint8_t { InvalidMessage = 0, RateLimited = 1, TargetNotFound = 2, DeliveryFailed = 3, InvalidTarget = 4 };
 
 #pragma pack(push, 1)
 
@@ -224,6 +231,29 @@ struct PlayerChat
     uint32_t characterId = 0;
     char message[MAX_CHAT_MESSAGE_LENGTH] = {};
 };
+
+struct WhisperRequest
+{
+    uint32_t targetCharacterId = 0;
+    char message[MAX_CHAT_MESSAGE_LENGTH] = {};
+};
+
+struct ChatResponse
+{
+    ChatOperation operation = ChatOperation::Map;
+    ChatResult result = ChatResult::InvalidMessage;
+    uint32_t targetCharacterId = 0;
+    uint32_t retryAfterMs = 0;
+};
+
+struct WhisperMessage
+{
+    uint32_t senderCharacterId = 0;
+    uint32_t targetCharacterId = 0;
+    char senderName[MAX_PLAYER_NAME_LENGTH] = {};
+    char targetName[MAX_PLAYER_NAME_LENGTH] = {};
+    char message[MAX_CHAT_MESSAGE_LENGTH] = {};
+};
 struct MonsterEnterMap
 {
     uint32_t monsterId = 0;
@@ -239,3 +269,6 @@ static_assert(sizeof(MapInfo) == 28);
 static_assert(sizeof(MovementInputPacket) == 22);
 static_assert(sizeof(MovementStatePacket) == 70);
 static_assert(sizeof(MapGeometryPacket) == 57);
+static_assert(sizeof(WhisperRequest) == 132);
+static_assert(sizeof(ChatResponse) == 10);
+static_assert(sizeof(WhisperMessage) == 266);

@@ -3,6 +3,7 @@
 #include "SocketUtils.h"
 
 #include <iostream>
+#include <algorithm>
 #include <utility>
 
 Session::Session(SOCKET socket) : _socket(socket), _recvBuffer(MAX_PACKET_SIZE)
@@ -16,6 +17,7 @@ Session::~Session()
 
 void Session::Close()
 {
+    _closeRequested = true;
     // socket 종료보다 먼저 논리적인 disconnect 처리를 수행한다.
     // 실제 객체 파괴는 pending I/O completion 회수 후 SessionManager가 담당한다.
     if (!_disconnectHandled)
@@ -29,10 +31,14 @@ void Session::Close()
 
 bool Session::PostRecv()
 {
-    if (_socket == INVALID_SOCKET)
+    if (!IsConnected())
         return false;
 
     _recvEvent.overlapped = {};
+    // 미완성 패킷이 남아 있어도 누적 버퍼의 남은 크기만큼만 수신한다.
+    _recvEvent.wsaBuf.len = static_cast<ULONG>((std::min)(_recvBuffer.WritableSize(), static_cast<int32_t>(sizeof(_recvEvent.buffer))));
+    if (_recvEvent.wsaBuf.len == 0)
+        return false;
 
     DWORD flags = 0;
     int32_t result = WSARecv(_socket, &_recvEvent.wsaBuf, 1, nullptr, &flags, &_recvEvent.overlapped, nullptr);
@@ -52,11 +58,20 @@ bool Session::PostRecv()
 
 bool Session::Send(const char* data, int32_t size)
 {
-    if (_socket == INVALID_SOCKET)
+    if (!IsConnected())
         return false;
 
     if (data == nullptr || size <= 0)
         return false;
+
+    // 느린 수신자의 대기열이 계속 늘어나지 않도록 연결별 송신량을 제한한다.
+    // Player 제거는 Map 순회가 끝난 뒤 SessionManager에서 수행한다.
+    if (static_cast<size_t>(size) > MaxQueuedSendBytes - _queuedSendBytes)
+    {
+        std::cerr << "Session send queue limit reached: queued=" << _queuedSendBytes << '\n';
+        RequestClose();
+        return false;
+    }
 
     // 비동기 Send가 완료될 때까지 전송 데이터가 유효해야 하므로
     // 호출자가 넘긴 메모리를 직접 참조하지 않고 Session 소유 버퍼로 복사한다.
@@ -64,11 +79,17 @@ bool Session::Send(const char* data, int32_t size)
     sendBuffer.buffer.assign(data, data + size);
 
     _sendQueue.push(std::move(sendBuffer));
+    _queuedSendBytes += size;
 
     if (_sendPending)
         return true;
 
-    return PostSend();
+    if (!PostSend())
+    {
+        RequestClose();
+        return false;
+    }
+    return true;
 }
 
 bool Session::Dispatch(IocpEvent* event, DWORD bytes, bool ioSuccess)
@@ -81,6 +102,10 @@ bool Session::Dispatch(IocpEvent* event, DWORD bytes, bool ioSuccess)
     case IocpEventType::Recv:
         _recvPending = false;
 
+        // 종료 이후 도착한 성공 completion도 패킷 처리에 다시 사용하지 않는다.
+        if (!IsConnected())
+            return true;
+
         if (!ioSuccess)
         {
             Close();
@@ -90,6 +115,9 @@ bool Session::Dispatch(IocpEvent* event, DWORD bytes, bool ioSuccess)
         return OnRecv(bytes);
 
     case IocpEventType::Send:
+        _sendPending = false;
+        if (!IsConnected())
+            return true;
         if (!ioSuccess)
         {
             _sendPending = false;
@@ -106,6 +134,8 @@ bool Session::Dispatch(IocpEvent* event, DWORD bytes, bool ioSuccess)
 
 bool Session::OnRecv(DWORD bytes)
 {
+    if (!IsConnected())
+        return true;
     if (bytes == 0)
     {
         std::cout << "Client Disconnected\n";
@@ -127,9 +157,6 @@ bool Session::OnRecv(DWORD bytes)
         return false;
     }
 
-    std::cout << "Recv Event: " << bytes << " bytes\n";
-    std::cout << "Buffered Data: " << _recvBuffer.DataSize() << " bytes\n";
-
     if (!ProcessPackets())
     {
         Close();
@@ -147,6 +174,8 @@ bool Session::OnRecv(DWORD bytes)
 
 bool Session::PostSend()
 {
+    if (!IsConnected())
+        return false;
     if (_sendQueue.empty())
         return true;
 
@@ -183,7 +212,7 @@ bool Session::PostSend()
 
 bool Session::OnSend(DWORD bytes)
 {
-    std::cout << "Send Complete: " << bytes << " bytes\n";
+    _sendPending = false;
 
     if (_sendQueue.empty())
         return false;
@@ -198,7 +227,7 @@ bool Session::OnSend(DWORD bytes)
         return false;
 
     sendBuffer.sentBytes += bytes;
-    _sendPending = false;
+    _queuedSendBytes -= bytes;
 
     if (sendBuffer.sentBytes < sendBuffer.buffer.size())
         return PostSend();
@@ -218,6 +247,8 @@ bool Session::ProcessPackets()
 {
     while (true)
     {
+        if (!IsConnected())
+            return false;
         if (_recvBuffer.DataSize() < sizeof(PacketHeader))
             break;
 
