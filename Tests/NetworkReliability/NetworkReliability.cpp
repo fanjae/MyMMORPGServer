@@ -138,6 +138,7 @@ namespace
 }
 
 void RunChatTests();
+void RunMovementAcknowledgementTests();
 
 int main(int argc, char* argv[])
 {
@@ -146,6 +147,7 @@ int main(int argc, char* argv[])
     try
     {
         RunChatTests();
+        RunMovementAcknowledgementTests();
         auto run = [](const char* name, const std::function<void()>& test) { test(); std::cout << "[PASS] " << name << '\n'; };
         run("Client listen config keeps local default and rejects invalid addresses", []
         {

@@ -15,6 +15,7 @@
   <ItemGroup>
     <ClCompile Include="NetworkReliability.cpp" />
     <ClCompile Include="ChatTests.cpp" />
+    <ClCompile Include="MovementAcknowledgementTests.cpp" />
     <ClCompile Include="..\..\GameServer\Map.cpp" />
     <ClCompile Include="..\..\GameServer\Player.cpp" />
     <ClCompile Include="..\..\GameServer\PlayerManager.cpp" />

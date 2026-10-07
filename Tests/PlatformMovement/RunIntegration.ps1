@@ -2,7 +2,8 @@ param(
     [string]$ClientDirectory = "$PSScriptRoot/../../../MyMMORPGClient",
     [ValidateRange(1, 600)][int]$StepTimeoutSeconds = 120,
     [switch]$FailAfterPlatform,
-    [string]$LoadTestContainer = ''
+    [string]$LoadTestContainer = '',
+    [string]$MeasurementOutputDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -147,12 +148,23 @@ try
     Invoke-TestStep $networkExe @() 'server-network'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--network') 'client-network'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--chat-unit') 'client-chat-unit'
+    Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--reconciliation') 'client-reconciliation'
+    Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--proxy-smoke') 'client-proxy-smoke'
     $trace = Join-Path $fixture 'physics.csv'
     Invoke-TestStep $physicsExe @((Join-Path $serverRoot 'data'), $trace) 'physics'
 
     Start-TestServers (Join-Path $serverRoot 'data/maps.csv') 'platform'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--chat') 'chat-test'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--platform', "--physics-trace=$trace") 'platform-test'
+    Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--latency', "--latency-trace=$(Join-Path $fixture 'latency.csv')") 'latency-test'
+    if (-not [string]::IsNullOrWhiteSpace($MeasurementOutputDirectory))
+    {
+        # 측정 결과는 명시한 출력 위치에 보존하고 임시 테스트 디렉터리는 기존처럼 정리한다.
+        $measurementRoot = [IO.Path]::GetFullPath($MeasurementOutputDirectory)
+        [IO.Directory]::CreateDirectory($measurementRoot) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $fixture 'latency.csv') -Destination (Join-Path $measurementRoot 'latency.csv')
+        Copy-Item -LiteralPath (Join-Path $fixture 'latency-test.out') -Destination (Join-Path $measurementRoot 'latency.out')
+    }
     if (-not [string]::IsNullOrWhiteSpace($LoadTestContainer))
     {
         Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--load', "--db-delay-container=$LoadTestContainer") 'load-test'
