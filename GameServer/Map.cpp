@@ -340,6 +340,8 @@ bool Map::SendMovementState(Player& recipient, const Player& player, MovementSta
     packet.footholdId = state.footholdId;
     packet.grounded = state.grounded;
     packet.reason = reason;
+    packet.inputTicks = player.GetInputTicks();
+    packet.jumpHeld = state.jumpHeld;
     return SendPacket(*recipient.GetSession(), GamePacketOpcode::MovementState, packet);
 }
 

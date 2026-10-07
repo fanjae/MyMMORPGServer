@@ -22,6 +22,7 @@ void Player::BeginMap()
     ++_generation;
     _inputSequence = 0;
     _appliedInputSequence = 0;
+    _appliedInputTicks = 0;
     _input = {};
     _jumpPending = false;
     _inputTime = std::chrono::steady_clock::now();
@@ -53,7 +54,14 @@ PlatformMovementInput Player::ConsumeInput(std::chrono::steady_clock::time_point
     }
 
     PlatformMovementInput input = _input;
-    _appliedInputSequence = _inputSequence;
+    // 입력 번호만으로는 같은 입력이 이미 적용된 고정 단계 수를 구분할 수 없다.
+    if (_appliedInputSequence != _inputSequence)
+    {
+        _appliedInputSequence = _inputSequence;
+        _appliedInputTicks = 0;
+    }
+    if (_appliedInputTicks < UINT32_MAX)
+        ++_appliedInputTicks;
     if (_jumpPending)
         _platformState.jumpHeld = false;
     input.jumpHeld = input.jumpHeld || _jumpPending;

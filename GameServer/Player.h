@@ -35,6 +35,7 @@ public:
     bool AcceptInput(const MovementInputPacket& input);
     uint64_t GetGeneration() const { return _generation; }
     uint64_t GetInputSequence() const { return _appliedInputSequence; }
+    uint32_t GetInputTicks() const { return _appliedInputTicks; }
     PlatformMovementState& GetPlatformState() { return _platformState; }
     const PlatformMovementState& GetPlatformState() const { return _platformState; }
     PlatformMovementInput ConsumeInput(std::chrono::steady_clock::time_point now, bool& expired);
@@ -54,6 +55,7 @@ private:
     uint64_t _generation = 0;
     uint64_t _inputSequence = 0;
     uint64_t _appliedInputSequence = 0;
+    uint32_t _appliedInputTicks = 0;
     PlatformMovementState _platformState;
     PlatformMovementInput _input;
     bool _jumpPending = false;

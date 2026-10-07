@@ -5,7 +5,7 @@
 
 constexpr uint32_t MAX_PLAYER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
-constexpr uint32_t GAME_PROTOCOL_VERSION = 4;
+constexpr uint32_t GAME_PROTOCOL_VERSION = 5;
 
 enum class GamePacketOpcode : uint16_t
 {
@@ -98,6 +98,8 @@ struct MovementStatePacket
     uint32_t footholdId = 0;
     uint8_t grounded = 0;
     MovementStateReason reason = MovementStateReason::Normal;
+    uint32_t inputTicks = 0;
+    uint8_t jumpHeld = 0;
 };
 
 struct MapGeometryPacket
@@ -267,7 +269,7 @@ static_assert(sizeof(MoveRequest) == 20);
 static_assert(sizeof(MoveResponse) == 21);
 static_assert(sizeof(MapInfo) == 28);
 static_assert(sizeof(MovementInputPacket) == 22);
-static_assert(sizeof(MovementStatePacket) == 70);
+static_assert(sizeof(MovementStatePacket) == 75);
 static_assert(sizeof(MapGeometryPacket) == 57);
 static_assert(sizeof(WhisperRequest) == 132);
 static_assert(sizeof(ChatResponse) == 10);
