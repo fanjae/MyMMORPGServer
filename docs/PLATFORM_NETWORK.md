@@ -1,6 +1,6 @@
 # 발판 이동의 서버·Unity 연결
 
-2026-10-05 발판 구현과 2026-10-06 프로토콜·채팅 갱신 기록입니다. 지형 CSV와 물리 규칙은 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md), 채팅·귓속말은 [CHAT_WHISPER.md](CHAT_WHISPER.md)를 참고합니다.
+2026-10-05 발판 구현, 2026-10-06 채팅과 2026-10-07 입력 재실행 갱신 기록입니다. 지형 CSV와 물리는 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md), 최신 보정은 [MOVEMENT_RECONCILIATION.md](MOVEMENT_RECONCILIATION.md)를 참고합니다.
 
 ## 구현과 제한
 
@@ -9,18 +9,18 @@
 - 클라이언트는 입력 변경 시와 50ms마다 입력을 전송합니다. 키 해제·창 비활성·채팅 포커스 시 중립 입력으로 전환합니다. 서버는 마지막 유효 입력 후 250ms가 지나면 수평 입력을 제거하고 중력은 계속 적용합니다.
 - Player의 입장 번호는 맵 변경마다 증가합니다. Map ID·입장 번호·단조 증가 요청 번호·방향·점프 비트를 검사하며 잘못된 입력은 위치 응답으로 거절하고 연결을 유지합니다. tick 사이의 짧은 점프 눌림·해제는 한 번의 점프 입력으로 보존합니다.
 - 서버 상태는 같은 맵의 본인과 상대에게 3 tick(60ms)마다 전송합니다. 점프·착지·낙하 복귀·입력 만료는 즉시 전송합니다. 응답의 sequence는 마지막 시뮬레이션에 적용한 입력 번호입니다.
-- Unity PlatformSimulation은 서버와 같은 20ms 계산 규칙으로 로컬 위치를 예측합니다. 서버 상태를 수신하면 그 상태에서 다시 예측하며 화면 오차는 PlayerView에서 보간합니다. 상대는 서버 snapshot 사이를 짧게 보간합니다. 큰 오차·낙하 복귀는 즉시 위치를 맞춥니다.
-- 아직 미확인 입력을 저장해 다시 실행하는 완전한 reconciliation은 없습니다. 지연이 커지면 로컬 위치 보정이 눈에 띌 수 있습니다. 경사 발판·사다리·포탈·드롭 점프는 이번 범위에 포함하지 않습니다.
+- Unity PlatformSimulation은 서버와 같은 20ms 계산 규칙으로 로컬 위치를 예측합니다. 입력 번호와 단계별 기록을 보관하고 서버가 확인한 적용 단계 이후의 입력만 재실행합니다. 로컬 화면은 재실행 완료 위치를 사용하고 상대는 100ms 수신 버퍼로 보간합니다. 큰 오차·낙하 복귀는 즉시 위치를 맞춥니다.
+- 서버와 로컬의 물리 단계 시작 시각까지 동기화하지 않으며 100ms보다 큰 수신 공백은 보일 수 있습니다. 경사 발판·사다리·포탈·드롭 점프는 이번 범위에 포함하지 않습니다.
 - 서버 지형을 녹색 발판 선분과 회색 벽으로 표시하고 서버의 캐릭터 반폭·반높이를 표시 크기에 적용합니다. Character ID별 색상과 로컬 카메라 추적은 유지합니다.
 
 ## wire format
 
-모든 패킷은 little-endian, 1바이트 packing이며 header는 전체 size uint16 + opcode uint16입니다. Game protocol version은 4입니다. 이름 필드 확장과 Login version 2는 [NETWORK_RELIABILITY.md](NETWORK_RELIABILITY.md)를 참고합니다. EnterGameRequest는 authKey uint64 뒤에 protocolVersion uint32를 추가합니다. 이전 8바이트 요청이나 다른 버전은 ProtocolMismatch(6) 응답을 받으며 인증 티켓을 소비하지 않습니다. 서버와 클라이언트를 함께 갱신해야 합니다.
+모든 패킷은 little-endian, 1바이트 packing이며 header는 전체 size uint16 + opcode uint16입니다. Game protocol version은 5입니다. 이름은 최대 16자·65바이트 형식이며 Login version 2는 유지합니다. EnterGameRequest는 authKey uint64 뒤에 protocolVersion uint32를 추가합니다. 이전 8바이트 요청이나 다른 버전은 ProtocolMismatch(6) 응답을 받으며 인증 티켓을 소비하지 않습니다. 서버와 클라이언트를 함께 갱신해야 합니다.
 
 | opcode | 패킷 | payload byte | 필드 순서 |
 |---|---|---:|---|
 | 14 | MovementInput | 22 | mapId u32, generation u64, sequence u64, horizontal i8, jumpHeld u8 |
-| 15 | MovementState | 70 | mapId u32, generation u64, characterId u32, serverTick u64, sequence u64, x/y/vx/vy i64 각 4개, footholdId u32, grounded u8, reason u8 |
+| 15 | MovementState | 75 | mapId u32, generation u64, characterId u32, serverTick u64, sequence u64, x/y/vx/vy i64 각 4개, footholdId u32, grounded u8, reason u8, inputTicks u32, jumpHeld u8 |
 | 16 | MapGeometry | 57 | mapId u32, generation u64, version u32, mode u8, halfWidth/halfHeight/horizontalSpeed/jumpSpeed/gravity/maxFallSpeed u32 각 6개, spawnX/spawnY i32, spawnFootholdId u32, footholdCount/colliderCount u16 |
 | 17 | Foothold | 40 | mapId u32, generation u64, id u32, x1/y1/x2/y2 i32, prevId/nextId u32 |
 | 18 | Collider | 32 | mapId u32, generation u64, id u32, minX/minY/maxX/maxY i32 |
@@ -52,15 +52,16 @@ DB_USER·DB_NAME도 .env의 MYSQL_USER·MYSQL_DATABASE와 다르면 해당 값�
 - 발판 프로토콜·실서버 PASS 14(2,000 tick C++/C# 비교 포함)
 - 임시 Free 설정의 기존 C++ TestClient PASS 15
 - 임시 Free 설정의 기존 C# Map-local PASS 16
-- 통신·서버 채팅 검증 C++ PASS 20·C# 통신 PASS 8
+- 통신·서버 채팅·이동 확인 검증 C++ PASS 24·C# 통신 PASS 8
 - C# 채팅 명령·패킷 PASS 8, 실서버 채팅·귓속말 PASS 6
+- C# 재실행·보간·테스트 포트 PASS 13, 수동 프록시 PASS 1, 실서버 지연 PASS 21
 - 스크립트가 예외 없이 종료
 
 서버를 직접 준비한 경우 클라이언트 저장소에서 `dotnet run --project .\Tests\MapLocalIntegration\MapLocalIntegration.csproj -- --platform`을 실행할 수 있습니다. trace 파일 없이 실행하면 2,000 tick 비교가 제외되어 PASS 13입니다. 기존 기본 실행은 두 맵이 Free인 임시 설정에만 사용하며 기본 발판 맵에서는 설정 안내와 함께 실패합니다.
 
 ## Unity 두 창 수동 테스트
 
-최신 실행 파일은 MyMMORPGClient/Builds/Chat/MyMMORPGClient.exe입니다. Desktop의 이전 실행 파일 대신 이 파일을 두 번 실행합니다. 창모드는 960×540입니다. 동일 DB 설정으로 최신 GameServer와 LoginServer를 실행합니다.
+최신 실행 파일은 MyMMORPGClient/Builds/Movement/MyMMORPGClient.exe입니다. Desktop의 이전 실행 파일 대신 이 파일을 두 번 실행합니다. 창모드는 960×540입니다. 동일 DB 설정으로 최신 GameServer와 LoginServer를 실행합니다.
 
 1. A는 test/test1234 → Warrior(1001), B는 test2/test1234 → Archer(2001)로 입장합니다. 양쪽 Map 100000000, Remote players 1, Monsters 1, 동일 ID의 동일 색상, 녹색 발판을 확인합니다. 같은 spawn에서는 두 사각형이 겹칠 수 있습니다.
 2. A의 빈 게임 영역을 클릭하고 오른쪽을 1초 누른 뒤 놓습니다. A만 이동하고 B 화면의 Remote 1001이 같은 좌표로 갱신되어야 합니다. B의 Local은 유지되어야 합니다. 2초 뒤 A Local과 B Remote 1001이 같고 멈춰 있어야 합니다.
@@ -77,4 +78,4 @@ DB_USER·DB_NAME도 .env의 MYSQL_USER·MYSQL_DATABASE와 다르면 해당 값�
 
 서버 Release x64와 Unity 6000.3.7f1 Windows 빌드를 완료했습니다. 임시 MySQL 3307에서 발판 PASS 14, 기존 Free C++ PASS 15·C# PASS 16을 확인했습니다. 독립 물리 PASS 48, 이동 예산 PASS 5, 맵 CSV PASS 10, 지형 시작 검사 PASS 7도 통과했습니다. Unity 화면의 지속 키 입력과 보간의 체감 품질은 위 수동 절차로 별도 확인합니다.
 
-채팅 빈도 제한과 연결 종료·재접속 검증을 추가했습니다. 다음 작업은 지연 환경에서 입력 저장·재실행을 포함한 위치 보정 검증입니다. 맵 콘텐츠는 현재 수평 테스트 발판에 한정되므로 경사·사다리 등은 별도 데이터와 이동 규칙을 정한 뒤 추가합니다.
+채팅 빈도 제한, 연결 종료·재접속과 지연 환경의 입력 재실행 검증을 추가했습니다. 다음 작업은 포탈과 Monster 생명주기입니다. 맵 콘텐츠는 현재 수평 테스트 발판에 한정되므로 경사·사다리 등은 별도 데이터와 이동 규칙을 정한 뒤 추가합니다.
