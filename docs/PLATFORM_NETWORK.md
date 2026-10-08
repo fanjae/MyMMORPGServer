@@ -1,5 +1,7 @@
 # 발판 이동의 서버·Unity 연결
 
+현재 런타임은 2026-10-08의 [클라이언트 이동·점프·착지 중계](CLIENT_MOVEMENT_RELAY.md)로 변경되었습니다. 아래 서버 물리·50ms 입력·60ms 상태 전송 설명은 이전 version 5 구현 기록입니다.
+
 2026-10-05 발판 구현, 2026-10-06 채팅과 2026-10-07 입력 재실행 갱신 기록입니다. 지형 CSV와 물리는 [PLATFORM_MOVEMENT.md](PLATFORM_MOVEMENT.md), 최신 보정은 [MOVEMENT_RECONCILIATION.md](MOVEMENT_RECONCILIATION.md)를 참고합니다.
 
 ## 구현과 제한
