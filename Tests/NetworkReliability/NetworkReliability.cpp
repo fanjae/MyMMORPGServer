@@ -139,6 +139,7 @@ namespace
 
 void RunChatTests();
 void RunMovementAcknowledgementTests();
+int RunMovementRelayFixture(uint16_t port);
 
 int main(int argc, char* argv[])
 {
@@ -146,6 +147,20 @@ int main(int argc, char* argv[])
         return 1;
     try
     {
+        if (argc > 1 && std::string(argv[1]) == "--relay-fixture")
+        {
+            int requested = argc > 2 ? std::stoi(argv[2]) : 27779;
+            Check(requested > 0 && requested <= 65535, "Invalid fixture port");
+            int result = RunMovementRelayFixture(static_cast<uint16_t>(requested));
+            SocketUtils::Clear();
+            return result;
+        }
+        if (argc > 1 && std::string(argv[1]) == "--movement-actions")
+        {
+            RunMovementAcknowledgementTests();
+            SocketUtils::Clear();
+            return 0;
+        }
         RunChatTests();
         RunMovementAcknowledgementTests();
         auto run = [](const char* name, const std::function<void()>& test) { test(); std::cout << "[PASS] " << name << '\n'; };

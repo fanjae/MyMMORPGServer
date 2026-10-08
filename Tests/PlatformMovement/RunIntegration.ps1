@@ -149,6 +149,7 @@ try
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--network') 'client-network'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--chat-unit') 'client-chat-unit'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--reconciliation') 'client-reconciliation'
+    Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--actions') 'client-actions'
     Invoke-TestStep 'dotnet' @('run', '--project', $project, '--no-build', '--', '--proxy-smoke') 'client-proxy-smoke'
     $trace = Join-Path $fixture 'physics.csv'
     Invoke-TestStep $physicsExe @((Join-Path $serverRoot 'data'), $trace) 'physics'
