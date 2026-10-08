@@ -22,7 +22,7 @@ namespace
 
 bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
 {
-    // 경과한 tick은 새 입력을 적용하기 전에 이전 입력으로 처리한다.
+    // 경과한 중계 시각을 먼저 갱신한다. Map은 캐릭터 물리를 계산하지 않는다.
     session.GetMapManager().Advance();
     switch (static_cast<GamePacketOpcode>(opcode))
     {
@@ -40,8 +40,8 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
     case GamePacketOpcode::WhisperRequest:
         return HandleWhisper(session, payload, payloadSize);
 
-    case GamePacketOpcode::MovementInput:
-        return HandleMovementInput(session, payload, payloadSize);
+    case GamePacketOpcode::MovementActions:
+        return HandleMovementActions(session, payload, payloadSize);
 
     default:
         return false;
@@ -300,23 +300,27 @@ bool GamePacketHandler::HandleWhisper(GameSession& session, const char* payload,
     return ChatService(session.GetPlayerManager()).SendWhisper(*player, request);
 }
 
-bool GamePacketHandler::HandleMovementInput(GameSession& session, const char* payload, uint16_t payloadSize)
+bool GamePacketHandler::HandleMovementActions(GameSession& session, const char* payload, uint16_t payloadSize)
 {
-    if (!session.IsAuthenticated() || payloadSize != sizeof(MovementInputPacket))
+    if (!session.IsAuthenticated() || payloadSize < sizeof(MovementActionsHeader))
         return false;
 
     Player* player = session.GetPlayer();
     if (player == nullptr || player->GetMap() == nullptr)
         return false;
 
-    MovementInputPacket request;
+    MovementActionsHeader request;
     memcpy(&request, payload, sizeof(request));
+    if (request.count == 0 || request.count > MAX_MOVEMENT_ACTIONS ||
+        payloadSize != sizeof(request) + request.count * sizeof(MovementAction))
+        return false;
+    MovementAction actions[MAX_MOVEMENT_ACTIONS];
+    memcpy(actions, payload + sizeof(request), request.count * sizeof(MovementAction));
     Map* map = player->GetMap();
     if (!map->IsPlatformer())
         return true;
 
-    if (request.mapId != map->GetMapId() || !player->AcceptInput(request))
-        return map->SendMovementState(*player, *player, MovementStateReason::InputRejected);
-
+    // 상태 검증 실패에 즉시 응답을 보내지 않아 중계 전송률 상한을 우회하지 않는다.
+    map->ReceiveMovementActions(*player, request, actions);
     return true;
 }

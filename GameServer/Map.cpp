@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <algorithm>
 
 namespace
 {
@@ -130,7 +131,12 @@ bool Map::AddPlayer(Player& player)
     player.BeginMap();
     if (IsPlatformer())
     {
-        _simulation->Reset(player.GetPlatformState());
+        // 초기 지형 상태만 설정한다. 이동·중력·착지 계산은 클라이언트가 수행한다.
+        auto& state = player.GetPlatformState();
+        state.x = _definition.spawnX;
+        state.y = _definition.spawnY;
+        state.footholdId = _geometry->movement.spawnFootholdId;
+        state.grounded = true;
         player.SetPosition(_definition.spawnX, _definition.spawnY);
     }
     return true;
@@ -144,6 +150,14 @@ void Map::RemovePlayer(Player& player)
         return;
 
     _players.erase(it);
+    _pendingActions.erase(player.GetCharacterId());
+    // 퇴장한 캐릭터의 이전 맵 행동을 나중에 중계하지 않는다.
+    for (auto& entry : _pendingActions)
+    {
+        auto& queue = entry.second;
+        queue.erase(std::remove_if(queue.begin(), queue.end(), [&](const PendingAction& item)
+            { return item.relay.characterId == player.GetCharacterId(); }), queue.end());
+    }
 
     if (player.GetMap() == this)
         player.SetMap(nullptr);
@@ -264,7 +278,6 @@ bool Map::NotifyPlayerEntered(Player& player)
 void Map::SetGeometry(const MapGeometry& geometry)
 {
     _geometry = &geometry;
-    _simulation = std::make_unique<MovementSimulation>(geometry);
 }
 
 bool Map::IsPlatformer() const
@@ -331,8 +344,8 @@ bool Map::SendMovementState(Player& recipient, const Player& player, MovementSta
     // 수신자의 입장 번호를 사용해 같은 맵 재입장 전의 상태도 구분한다.
     packet.generation = recipient.GetGeneration();
     packet.characterId = player.GetCharacterId();
-    packet.serverTick = _tick;
-    packet.sequence = player.GetInputSequence();
+    packet.serverTick = player.GetActionTick();
+    packet.sequence = player.GetActionSequence();
     packet.x = std::llround(state.x * 1000.0);
     packet.y = std::llround(state.y * 1000.0);
     packet.velocityX = std::llround(state.velocityX * 1000.0);
@@ -340,7 +353,7 @@ bool Map::SendMovementState(Player& recipient, const Player& player, MovementSta
     packet.footholdId = state.footholdId;
     packet.grounded = state.grounded;
     packet.reason = reason;
-    packet.inputTicks = player.GetInputTicks();
+    packet.inputTicks = 0; // 초기 상태 형식만 유지하며 서버 물리 적용 단계는 없다.
     packet.jumpHeld = state.jumpHeld;
     return SendPacket(*recipient.GetSession(), GamePacketOpcode::MovementState, packet);
 }
@@ -350,46 +363,94 @@ void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
     _tick = tick;
     if (!IsPlatformer())
         return;
-
     std::vector<Session*> failed;
+    constexpr size_t maxRelayCount = (MAX_PACKET_SIZE - sizeof(PacketHeader) - sizeof(MovementActionsBroadcastHeader)) / sizeof(RelayedMovementAction);
     for (const auto& entry : _players)
     {
-        Player& player = *entry.second;
-        auto& state = player.GetPlatformState();
-        bool grounded = state.grounded;
-        bool expired = false;
-        bool hadInput = state.velocityX != 0.0 || state.jumpHeld;
-        auto input = player.ConsumeInput(now, expired);
-        SimulationResult result = _simulation->Step(state, input);
-        player.FinishInput();
-        MovementStateReason reason = MovementStateReason::Normal;
-        if (result == SimulationResult::InvalidState)
-        {
-            _simulation->Reset(state);
-            reason = MovementStateReason::Respawned;
-        }
-        else if (result == SimulationResult::Respawned)
-            reason = MovementStateReason::Respawned;
-        else if (expired && hadInput)
-            reason = MovementStateReason::InputExpired;
-
-        player.SetPosition(static_cast<int32_t>(std::llround(state.x)), static_cast<int32_t>(std::llround(state.y)));
-        if (tick % 3 != 0 && grounded == state.grounded && reason == MovementStateReason::Normal)
+        Player& recipient = *entry.second;
+        auto found = _pendingActions.find(recipient.GetCharacterId());
+        if (found == _pendingActions.end() || found->second.empty() || !recipient.CanSendMovement(now))
             continue;
-
-        for (const auto& recipient : _players)
+        auto& queue = found->second;
+        MovementActionsBroadcastHeader payload{GetMapId(), recipient.GetGeneration(), tick,
+            static_cast<uint16_t>((std::min)(maxRelayCount, queue.size()))};
+        PacketHeader header{static_cast<uint16_t>(sizeof(PacketHeader) + sizeof(payload) + payload.count * sizeof(RelayedMovementAction)),
+            static_cast<uint16_t>(GamePacketOpcode::MovementActionsBroadcast)};
+        std::vector<char> buffer(header.size);
+        memcpy(buffer.data(), &header, sizeof(header));
+        memcpy(buffer.data() + sizeof(header), &payload, sizeof(payload));
+        for (uint16_t i = 0; i < payload.count; ++i)
         {
-            if (!SendMovementState(*recipient.second, player, reason))
-                failed.push_back(recipient.second->GetSession());
+            PendingAction item = queue.front();
+            queue.pop_front();
+            // 서버 대기 동안 지난 시간도 원격 클라이언트의 기준 시각에 반영한다.
+            item.relay.latestClientTick += tick - item.receivedTick;
+            memcpy(buffer.data() + sizeof(header) + sizeof(payload) + i * sizeof(RelayedMovementAction), &item.relay, sizeof(item.relay));
         }
+        recipient.MarkMovementSent(now);
+        if (recipient.GetSession() == nullptr || !recipient.GetSession()->Send(buffer.data(), static_cast<int32_t>(buffer.size())))
+            failed.push_back(recipient.GetSession());
     }
-
-    // 연결 종료 콜백은 Player를 제거하므로 SessionManager에서 처리하도록 예약한다.
     for (Session* session : failed)
     {
         if (session != nullptr)
             session->RequestClose();
     }
+}
+
+bool Map::ReceiveMovementActions(Player& player, const MovementActionsHeader& header, const MovementAction* actions)
+{
+    if (!IsPlatformer() || player.GetMap() != this || header.mapId != GetMapId() ||
+        header.count == 0 || header.count > MAX_MOVEMENT_ACTIONS || header.latestClientTick > UINT64_MAX - 100000)
+        return false;
+    // 크기·범위 검사를 전체 묶음에 먼저 적용해 잘못된 후반 레코드가 부분 갱신을 만들지 않는다.
+    uint64_t previousSequence = 0, previousTick = 0;
+    const auto& settings = _geometry->movement;
+    for (uint16_t i = 0; i < header.count; ++i)
+    {
+        const auto& action = actions[i];
+        if (action.sequence <= previousSequence || action.clientTick < previousTick || action.clientTick > header.latestClientTick ||
+            action.kind > MovementActionKind::Fall || action.horizontal < -1 || action.horizontal > 1 || action.grounded > 1 ||
+            action.x < static_cast<int64_t>(_definition.minX) * 1000 || action.x > static_cast<int64_t>(_definition.maxX) * 1000 ||
+            action.y < static_cast<int64_t>(_definition.minY) * 1000 || action.y > static_cast<int64_t>(_definition.maxY) * 1000 ||
+            action.velocityX < -static_cast<int64_t>(settings.horizontalSpeed) * 1000 || action.velocityX > static_cast<int64_t>(settings.horizontalSpeed) * 1000 ||
+            action.velocityY < -static_cast<int64_t>(settings.maxFallSpeed) * 1000 || action.velocityY > static_cast<int64_t>(settings.jumpSpeed) * 1000)
+            return false;
+        if (action.grounded)
+        {
+            const auto* support = _geometry->FindFoothold(action.footholdId);
+            if (support == nullptr || action.velocityY != 0 ||
+                action.x < static_cast<int64_t>(support->x1) * 1000 || action.x > static_cast<int64_t>(support->x2) * 1000 ||
+                action.y != (static_cast<int64_t>(support->y1) + settings.halfHeight) * 1000)
+                return false;
+        }
+        else if (action.footholdId != 0)
+            return false;
+        if (action.kind == MovementActionKind::Respawn &&
+            (action.x != static_cast<int64_t>(_definition.spawnX) * 1000 || action.y != static_cast<int64_t>(_definition.spawnY) * 1000))
+            return false;
+        previousSequence = action.sequence;
+        previousTick = action.clientTick;
+    }
+    if (!player.AcceptActionBatch(header.generation, header.batchSequence, header.latestClientTick))
+        return false;
+    for (uint16_t i = 0; i < header.count; ++i)
+    {
+        if (!player.AcceptAction(actions[i]))
+            continue; // 착지 전 재점프와 이전 점프 번호는 중계하지 않는다.
+        for (const auto& entry : _players)
+        {
+            auto& queue = _pendingActions[entry.first];
+            if (queue.size() >= 256)
+            {
+                if (entry.second->GetSession() != nullptr)
+                    entry.second->GetSession()->RequestClose();
+                continue;
+            }
+            queue.push_back(PendingAction{RelayedMovementAction{player.GetCharacterId(), header.latestClientTick, actions[i]}, _tick});
+        }
+    }
+    return true;
 }
 
 void Map::NotifyPlayerLeaving(Player& player)

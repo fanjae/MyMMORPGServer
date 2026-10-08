@@ -5,7 +5,8 @@
 
 constexpr uint32_t MAX_PLAYER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
-constexpr uint32_t GAME_PROTOCOL_VERSION = 5;
+constexpr uint32_t GAME_PROTOCOL_VERSION = 6;
+constexpr uint16_t MAX_MOVEMENT_ACTIONS = 32;
 
 enum class GamePacketOpcode : uint16_t
 {
@@ -30,7 +31,9 @@ enum class GamePacketOpcode : uint16_t
     GeometryEnd = 19,
     WhisperRequest = 20,
     ChatResponse = 21,
-    WhisperMessage = 22
+    WhisperMessage = 22,
+    MovementActions = 23,
+    MovementActionsBroadcast = 24
 };
 
 enum class EnterGameResult : uint8_t
@@ -64,6 +67,7 @@ enum class MoveResult : uint8_t
 };
 
 enum class MovementStateReason : uint8_t { Normal = 0, Respawned = 1, InputRejected = 2, InputExpired = 3 };
+enum class MovementActionKind : uint8_t { Input = 0, Jump = 1, Land = 2, Checkpoint = 3, Respawn = 4, Fall = 5 };
 enum class ChatOperation : uint8_t { Map = 0, Whisper = 1 };
 enum class ChatResult : uint8_t { InvalidMessage = 0, RateLimited = 1, TargetNotFound = 2, DeliveryFailed = 3, InvalidTarget = 4 };
 
@@ -82,6 +86,46 @@ struct MovementInputPacket
     uint64_t sequence = 0;
     int8_t horizontal = 0;
     uint8_t jumpHeld = 0;
+};
+
+// 행동이 적용된 clientTick 직후의 기준점. 서버는 물리를 재실행하지 않는다.
+struct MovementAction
+{
+    uint64_t sequence = 0;
+    uint64_t clientTick = 0;
+    uint64_t jumpId = 0;
+    int64_t x = 0;
+    int64_t y = 0;
+    int64_t velocityX = 0;
+    int64_t velocityY = 0;
+    uint32_t footholdId = 0;
+    int8_t horizontal = 0;
+    uint8_t grounded = 0;
+    MovementActionKind kind = MovementActionKind::Input;
+};
+
+struct MovementActionsHeader
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0;
+    uint64_t batchSequence = 0;
+    uint64_t latestClientTick = 0;
+    uint16_t count = 0;
+};
+
+struct MovementActionsBroadcastHeader
+{
+    uint32_t mapId = 0;
+    uint64_t generation = 0; // 수신자의 맵 입장 번호
+    uint64_t serverTick = 0; // 물리 단계가 아닌 중계 시각
+    uint16_t count = 0;
+};
+
+struct RelayedMovementAction
+{
+    uint32_t characterId = 0;
+    uint64_t latestClientTick = 0;
+    MovementAction action;
 };
 
 struct MovementStatePacket
@@ -270,6 +314,10 @@ static_assert(sizeof(MoveResponse) == 21);
 static_assert(sizeof(MapInfo) == 28);
 static_assert(sizeof(MovementInputPacket) == 22);
 static_assert(sizeof(MovementStatePacket) == 75);
+static_assert(sizeof(MovementAction) == 63);
+static_assert(sizeof(MovementActionsHeader) == 30);
+static_assert(sizeof(MovementActionsBroadcastHeader) == 22);
+static_assert(sizeof(RelayedMovementAction) == 75);
 static_assert(sizeof(MapGeometryPacket) == 57);
 static_assert(sizeof(WhisperRequest) == 132);
 static_assert(sizeof(ChatResponse) == 10);

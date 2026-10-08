@@ -32,14 +32,17 @@ public:
     MovementValidator& GetMovementValidator() { return _movementValidator; }
     bool AcceptMoveSequence(uint64_t sequence);
     void BeginMap();
-    bool AcceptInput(const MovementInputPacket& input);
+    bool AcceptAction(const MovementAction& action);
+    bool AcceptActionBatch(uint64_t generation, uint64_t sequence, uint64_t latestTick);
     uint64_t GetGeneration() const { return _generation; }
-    uint64_t GetInputSequence() const { return _appliedInputSequence; }
-    uint32_t GetInputTicks() const { return _appliedInputTicks; }
+    uint64_t GetActionSequence() const { return _acceptedActionSequence; }
+    uint64_t GetJumpId() const { return _jumpId; }
+    bool IsAirborne() const { return _airborne; }
+    uint64_t GetActionTick() const { return _actionTick; }
+    bool CanSendMovement(std::chrono::steady_clock::time_point now) const { return now >= _nextMovementSend; }
+    void MarkMovementSent(std::chrono::steady_clock::time_point now) { _nextMovementSend = now + std::chrono::milliseconds(200); }
     PlatformMovementState& GetPlatformState() { return _platformState; }
     const PlatformMovementState& GetPlatformState() const { return _platformState; }
-    PlatformMovementInput ConsumeInput(std::chrono::steady_clock::time_point now, bool& expired);
-    void FinishInput() { _platformState.jumpHeld = _input.jumpHeld; }
 
 private:
     uint32_t _characterId = 0;
@@ -53,11 +56,13 @@ private:
     MovementValidator _movementValidator;
     uint64_t _lastMoveSequence = 0;
     uint64_t _generation = 0;
-    uint64_t _inputSequence = 0;
-    uint64_t _appliedInputSequence = 0;
-    uint32_t _appliedInputTicks = 0;
+    uint64_t _actionSequence = 0;
+    uint64_t _acceptedActionSequence = 0;
+    uint64_t _batchSequence = 0;
+    uint64_t _latestClientTick = 0;
+    uint64_t _actionTick = 0;
+    uint64_t _jumpId = 0;
+    bool _airborne = false;
+    std::chrono::steady_clock::time_point _nextMovementSend{};
     PlatformMovementState _platformState;
-    PlatformMovementInput _input;
-    bool _jumpPending = false;
-    std::chrono::steady_clock::time_point _inputTime;
 };

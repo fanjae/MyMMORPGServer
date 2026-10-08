@@ -160,7 +160,7 @@ void MapManager::Advance()
         _maxTickLagMilliseconds = (std::max)(_maxTickLagMilliseconds, static_cast<int64_t>(lag));
         ++_tick;
         for (const auto& entry : _maps)
-            entry.second->Tick(_tick, _nextTick);
+            entry.second->Tick(_tick, tickStart);
 
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tickStart).count();
         _maxTickMicroseconds = (std::max)(_maxTickMicroseconds, static_cast<int64_t>(duration));

@@ -1,6 +1,7 @@
 ﻿#include "Player.h"
 
 #include <utility>
+#include <cmath>
 
 Player::Player(uint32_t characterId, uint32_t accountId, std::string name, uint16_t level)
     : _characterId(characterId), _accountId(accountId), _name(std::move(name)), _level(level)
@@ -20,51 +21,62 @@ bool Player::AcceptMoveSequence(uint64_t sequence)
 void Player::BeginMap()
 {
     ++_generation;
-    _inputSequence = 0;
-    _appliedInputSequence = 0;
-    _appliedInputTicks = 0;
-    _input = {};
-    _jumpPending = false;
-    _inputTime = std::chrono::steady_clock::now();
+    _actionSequence = _acceptedActionSequence = _batchSequence = _latestClientTick = _actionTick = _jumpId = 0;
+    _airborne = false;
+    _platformState = {};
 }
 
-bool Player::AcceptInput(const MovementInputPacket& input)
+bool Player::AcceptActionBatch(uint64_t generation, uint64_t sequence, uint64_t latestTick)
 {
-    if (input.generation != _generation || input.sequence <= _inputSequence || input.horizontal < -1 || input.horizontal > 1 || input.jumpHeld > 1)
+    if (generation != _generation || sequence <= _batchSequence || latestTick < _latestClientTick)
         return false;
-
-    // 같은 tick 사이에 점프와 해제가 도착해도 짧은 점프 입력을 보존한다.
-    if (input.jumpHeld != 0 && !_input.jumpHeld)
-        _jumpPending = true;
-
-    _inputSequence = input.sequence;
-    _input.horizontal = input.horizontal;
-    _input.jumpHeld = input.jumpHeld != 0;
-    _inputTime = std::chrono::steady_clock::now();
+    _batchSequence = sequence;
+    _latestClientTick = latestTick;
     return true;
 }
 
-PlatformMovementInput Player::ConsumeInput(std::chrono::steady_clock::time_point now, bool& expired)
+bool Player::AcceptAction(const MovementAction& action)
 {
-    expired = now - _inputTime >= std::chrono::milliseconds(250);
-    if (expired)
+    if (action.sequence <= _actionSequence || action.clientTick < _actionTick ||
+        action.horizontal < -1 || action.horizontal > 1 || action.grounded > 1 ||
+        action.kind > MovementActionKind::Fall)
+        return false;
+    // 거절한 점프도 재전송으로 나중에 살아나지 않게 요청 번호를 소비한다.
+    _actionSequence = action.sequence;
+    switch (action.kind)
     {
-        _input = {};
-        _jumpPending = false;
+    case MovementActionKind::Jump:
+    case MovementActionKind::Fall:
+        if (_airborne || !_platformState.grounded || action.grounded != 0 || action.jumpId <= _jumpId)
+            return false;
+        _airborne = true;
+        _jumpId = action.jumpId;
+        break;
+    case MovementActionKind::Land:
+        if (!_airborne || action.jumpId != _jumpId || action.grounded == 0)
+            return false;
+        _airborne = false;
+        break;
+    case MovementActionKind::Respawn:
+        if (action.jumpId != _jumpId || action.grounded == 0)
+            return false;
+        _airborne = false;
+        break;
+    default:
+        // 위치 확인이나 입력 변경으로 착지 잠금을 해제할 수 없다.
+        if (action.jumpId != _jumpId || (action.grounded != 0) == _airborne)
+            return false;
+        break;
     }
-
-    PlatformMovementInput input = _input;
-    // 입력 번호만으로는 같은 입력이 이미 적용된 고정 단계 수를 구분할 수 없다.
-    if (_appliedInputSequence != _inputSequence)
-    {
-        _appliedInputSequence = _inputSequence;
-        _appliedInputTicks = 0;
-    }
-    if (_appliedInputTicks < UINT32_MAX)
-        ++_appliedInputTicks;
-    if (_jumpPending)
-        _platformState.jumpHeld = false;
-    input.jumpHeld = input.jumpHeld || _jumpPending;
-    _jumpPending = false;
-    return input;
+    _actionTick = action.clientTick;
+    _acceptedActionSequence = action.sequence;
+    _platformState.x = action.x / 1000.0;
+    _platformState.y = action.y / 1000.0;
+    _platformState.velocityX = action.velocityX / 1000.0;
+    _platformState.velocityY = action.velocityY / 1000.0;
+    _platformState.footholdId = action.footholdId;
+    _platformState.grounded = action.grounded != 0;
+    _platformState.jumpHeld = false;
+    SetPosition(static_cast<int32_t>(std::llround(_platformState.x)), static_cast<int32_t>(std::llround(_platformState.y)));
+    return true;
 }
