@@ -180,16 +180,35 @@ void MapManager::Advance()
 
 void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
 {
+    auto now = std::chrono::steady_clock::now();
+    auto intervalMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _metricsStarted).count();
     size_t players = 0;
     for (const auto& entry : _maps)
         players += entry.second->GetPlayerCount();
-    // 일정 구간의 최대 tick 처리 시간과 누적 송신량을 함께 기록해 부하를 비교한다.
-    std::cout << "Server metrics: sessions=" << sessions << " players=" << players
+    // queuedBytes는 현재 TCP 송신 대기량이며 구간 최대값이나 누적 전송량이 아니다.
+    std::cout << "Server metrics: intervalMs=" << intervalMs << " sessions=" << sessions << " players=" << players
         << " queuedBytes=" << queuedBytes << " maxTickUs=" << _maxTickMicroseconds
         << " maxTickLagMs=" << _maxTickLagMilliseconds << " catchUpLimits=" << _catchUpLimits << '\n';
+    for (const auto& entry : _maps)
+    {
+        Map& map = *entry.second;
+        if (!map.IsPlatformer())
+            continue;
+        auto metrics = map.TakeMovementMetrics();
+        std::cout << "Movement metrics: intervalMs=" << intervalMs << " map=" << map.GetMapId() << " players=" << map.GetPlayerCount()
+            << " receivedPackets=" << metrics.receivedPackets << " receivedBytes=" << metrics.receivedBytes
+            << " rejectedPackets=" << metrics.rejectedPackets << " acceptedActions=" << metrics.acceptedActions
+            << " rejectedActions=" << metrics.rejectedActions << " relayPackets=" << metrics.relayPackets
+            << " relayBytes=" << metrics.relayBytes << " relayActions=" << metrics.relayActions
+            << " sendFailures=" << metrics.sendFailures << " queueOverflows=" << metrics.queueOverflows
+            << " pendingActions=" << metrics.pendingActions << " maxPendingPerRecipient=" << metrics.maxPendingPerRecipient
+            << " peakPendingPerRecipient=" << metrics.peakPendingPerRecipient << " oldestPendingMs=" << metrics.oldestPendingMs
+            << " maxRelayWaitMs=" << metrics.maxRelayWaitMs << '\n';
+    }
     _maxTickMicroseconds = 0;
     _maxTickLagMilliseconds = 0;
     _catchUpLimits = 0;
+    _metricsStarted = now;
 }
 
 uint32_t MapManager::GetWaitMilliseconds() const

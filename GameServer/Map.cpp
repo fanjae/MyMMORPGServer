@@ -383,13 +383,25 @@ void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
         {
             PendingAction item = queue.front();
             queue.pop_front();
+            auto wait = std::chrono::duration_cast<std::chrono::milliseconds>(now - item.receivedAt).count();
+            _movementMetrics.maxRelayWaitMs = (std::max)(_movementMetrics.maxRelayWaitMs, static_cast<int64_t>(wait));
             // 서버 대기 동안 지난 시간도 원격 클라이언트의 기준 시각에 반영한다.
             item.relay.latestClientTick += tick - item.receivedTick;
             memcpy(buffer.data() + sizeof(header) + sizeof(payload) + i * sizeof(RelayedMovementAction), &item.relay, sizeof(item.relay));
         }
         recipient.MarkMovementSent(now);
         if (recipient.GetSession() == nullptr || !recipient.GetSession()->Send(buffer.data(), static_cast<int32_t>(buffer.size())))
+        {
+            ++_movementMetrics.sendFailures;
             failed.push_back(recipient.GetSession());
+        }
+        else
+        {
+            // Send가 수락한 게임 메시지이며 TCP 전송 완료나 상대 화면 반영을 뜻하지 않는다.
+            ++_movementMetrics.relayPackets;
+            _movementMetrics.relayBytes += buffer.size();
+            _movementMetrics.relayActions += payload.count;
+        }
     }
     for (Session* session : failed)
     {
@@ -400,9 +412,12 @@ void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
 
 bool Map::ReceiveMovementActions(Player& player, const MovementActionsHeader& header, const MovementAction* actions)
 {
+    ++_movementMetrics.receivedPackets;
+    _movementMetrics.receivedBytes += sizeof(PacketHeader) + sizeof(header) + header.count * sizeof(MovementAction);
+    auto reject = [this]() { ++_movementMetrics.rejectedPackets; return false; };
     if (!IsPlatformer() || player.GetMap() != this || header.mapId != GetMapId() ||
         header.count == 0 || header.count > MAX_MOVEMENT_ACTIONS || header.latestClientTick > UINT64_MAX - 100000)
-        return false;
+        return reject();
     // 크기·범위 검사를 전체 묶음에 먼저 적용해 잘못된 후반 레코드가 부분 갱신을 만들지 않는다.
     uint64_t previousSequence = 0, previousTick = 0;
     const auto& settings = _geometry->movement;
@@ -415,42 +430,70 @@ bool Map::ReceiveMovementActions(Player& player, const MovementActionsHeader& he
             action.y < static_cast<int64_t>(_definition.minY) * 1000 || action.y > static_cast<int64_t>(_definition.maxY) * 1000 ||
             action.velocityX < -static_cast<int64_t>(settings.horizontalSpeed) * 1000 || action.velocityX > static_cast<int64_t>(settings.horizontalSpeed) * 1000 ||
             action.velocityY < -static_cast<int64_t>(settings.maxFallSpeed) * 1000 || action.velocityY > static_cast<int64_t>(settings.jumpSpeed) * 1000)
-            return false;
+            return reject();
         if (action.grounded)
         {
             const auto* support = _geometry->FindFoothold(action.footholdId);
             if (support == nullptr || action.velocityY != 0 ||
                 action.x < static_cast<int64_t>(support->x1) * 1000 || action.x > static_cast<int64_t>(support->x2) * 1000 ||
                 action.y != (static_cast<int64_t>(support->y1) + settings.halfHeight) * 1000)
-                return false;
+                return reject();
         }
         else if (action.footholdId != 0)
-            return false;
+            return reject();
         if (action.kind == MovementActionKind::Respawn &&
             (action.x != static_cast<int64_t>(_definition.spawnX) * 1000 || action.y != static_cast<int64_t>(_definition.spawnY) * 1000))
-            return false;
+            return reject();
         previousSequence = action.sequence;
         previousTick = action.clientTick;
     }
     if (!player.AcceptActionBatch(header.generation, header.batchSequence, header.latestClientTick))
-        return false;
+        return reject();
+    auto receivedAt = std::chrono::steady_clock::now();
     for (uint16_t i = 0; i < header.count; ++i)
     {
         if (!player.AcceptAction(actions[i]))
+        {
+            ++_movementMetrics.rejectedActions;
             continue; // 착지 전 재점프와 이전 점프 번호는 중계하지 않는다.
+        }
+        ++_movementMetrics.acceptedActions;
         for (const auto& entry : _players)
         {
             auto& queue = _pendingActions[entry.first];
             if (queue.size() >= 256)
             {
+                ++_movementMetrics.queueOverflows;
                 if (entry.second->GetSession() != nullptr)
                     entry.second->GetSession()->RequestClose();
                 continue;
             }
-            queue.push_back(PendingAction{RelayedMovementAction{player.GetCharacterId(), header.latestClientTick, actions[i]}, _tick});
+            queue.push_back(PendingAction{RelayedMovementAction{player.GetCharacterId(), header.latestClientTick, actions[i]}, _tick, receivedAt});
+            _movementMetrics.peakPendingPerRecipient = (std::max)(_movementMetrics.peakPendingPerRecipient, queue.size());
         }
     }
     return true;
+}
+
+Map::MovementMetrics Map::TakeMovementMetrics()
+{
+    MovementMetrics metrics = _movementMetrics;
+    auto now = std::chrono::steady_clock::now();
+    for (const auto& entry : _pendingActions)
+    {
+        const auto& queue = entry.second;
+        metrics.pendingActions += queue.size();
+        metrics.maxPendingPerRecipient = (std::max)(metrics.maxPendingPerRecipient, queue.size());
+        if (!queue.empty())
+        {
+            auto wait = std::chrono::duration_cast<std::chrono::milliseconds>(now - queue.front().receivedAt).count();
+            metrics.oldestPendingMs = (std::max)(metrics.oldestPendingMs, static_cast<int64_t>(wait));
+        }
+    }
+    // 구간 카운터만 비우고 아직 전송되지 않은 행동은 다음 구간에도 그대로 남긴다.
+    _movementMetrics = {};
+    _movementMetrics.peakPendingPerRecipient = metrics.maxPendingPerRecipient;
+    return metrics;
 }
 
 void Map::NotifyPlayerLeaving(Player& player)

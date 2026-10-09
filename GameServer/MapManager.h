@@ -29,4 +29,5 @@ private:
     int64_t _maxTickMicroseconds = 0;
     int64_t _maxTickLagMilliseconds = 0;
     uint64_t _catchUpLimits = 0;
+    std::chrono::steady_clock::time_point _metricsStarted = std::chrono::steady_clock::now();
 };

@@ -126,4 +126,79 @@ void RunMovementAcknowledgementTests()
         Check(f.sa.IsCloseRequested() && f.sb.packets.size() == 2, "Recipient failure was not isolated");
         for (const auto& packet : f.sb.packets) Check(packet.size() <= MAX_PACKET_SIZE, "Oversized broadcast");
     });
+    run("Movement metrics separate batch rejection, action rejection and recipient fan-out", []
+    {
+        Fixture f;
+        Check(f.Send(1, {f.Action(1, MovementActionKind::Jump)}), "Initial jump rejected");
+        Check(f.Send(2, {f.Action(2, MovementActionKind::Jump, 2)}), "Airborne batch rejected");
+        auto invalid = f.Action(3, MovementActionKind::Land); invalid.footholdId = 99;
+        Check(!f.Send(3, {invalid}), "Invalid foothold accepted");
+        auto received = f.map.TakeMovementMetrics();
+        Check(received.receivedPackets == 3 && received.receivedBytes == 3 * (4 + 30 + 63), "Received wire bytes mismatch");
+        Check(received.rejectedPackets == 1 && received.acceptedActions == 1 && received.rejectedActions == 1,
+            "Batch and action rejection were conflated");
+        Check(received.pendingActions == 2 && received.peakPendingPerRecipient == 1, "Recipient fan-out was not counted");
+        f.map.Tick(1, std::chrono::steady_clock::now() + std::chrono::milliseconds(250));
+        auto sent = f.map.TakeMovementMetrics();
+        Check(sent.receivedPackets == 0 && sent.relayPackets == 2 && sent.relayActions == 2 && sent.relayBytes == 2 * (4 + 22 + 75),
+            "Interval reset or relay bytes mismatch");
+        Check(sent.pendingActions == 0 && sent.maxRelayWaitMs >= 250, "Queue did not drain or wait age was not measured");
+    });
+    run("Metrics reads preserve pending queues and map departure removes queued recipient copies", []
+    {
+        Fixture f;
+        Check(f.Send(1, {f.Action(1, MovementActionKind::Jump), f.Action(2, MovementActionKind::Land)}), "Ordered batch rejected");
+        auto first = f.map.TakeMovementMetrics(), second = f.map.TakeMovementMetrics();
+        Check(first.pendingActions == 4 && second.pendingActions == 4 && second.receivedPackets == 0 &&
+            second.maxPendingPerRecipient == 2 && second.peakPendingPerRecipient == 2, "Metrics read mutated pending actions");
+        f.map.RemovePlayer(f.a);
+        Check(f.map.TakeMovementMetrics().pendingActions == 0, "Departure left queued actions for the old map presence");
+    });
+    run("Failed sends and queue overflow are excluded from accepted relay traffic", []
+    {
+        Fixture f;
+        for (uint64_t i = 1; i <= 257; ++i)
+        {
+            auto action = f.Action(i, MovementActionKind::Land, 0); action.kind = MovementActionKind::Checkpoint;
+            Check(f.Send(i, {action}), "Checkpoint rejected");
+        }
+        auto queued = f.map.TakeMovementMetrics();
+        Check(queued.pendingActions == 512 && queued.peakPendingPerRecipient == 256 && queued.queueOverflows == 2,
+            "Queue overflow did not retain the bounded recipient copies");
+        f.sa.fail = true;
+        f.map.Tick(1, std::chrono::steady_clock::now());
+        auto sent = f.map.TakeMovementMetrics();
+        Check(sent.sendFailures == 1 && sent.relayPackets == 1 && sent.relayActions == 54 && sent.relayBytes == 4076 &&
+            sent.pendingActions == 404, "Failed recipient was counted as successful traffic");
+    });
+    run("Local fan-out measurement scales across 2, 8 and 32 recipients", []
+    {
+        for (uint32_t count : {2u, 8u, 32u})
+        {
+            Fixture f;
+            std::vector<std::unique_ptr<ActionSession>> sessions;
+            std::vector<std::unique_ptr<Player>> players;
+            for (uint32_t i = 2; i < count; ++i)
+            {
+                sessions.push_back(std::make_unique<ActionSession>());
+                players.push_back(std::make_unique<Player>(3000 + i, 3000 + i, "load", static_cast<uint16_t>(1)));
+                players.back()->SetSession(sessions.back().get());
+                Check(f.map.AddPlayer(*players.back()), "Load recipient registration failed");
+            }
+            for (uint64_t i = 1; i <= 32; ++i)
+            {
+                auto action = f.Action(i, MovementActionKind::Land, 0); action.kind = MovementActionKind::Checkpoint;
+                Check(f.Send(i, {action}), "Load checkpoint rejected");
+            }
+            auto queued = f.map.TakeMovementMetrics();
+            f.map.Tick(1, std::chrono::steady_clock::now());
+            auto sent = f.map.TakeMovementMetrics();
+            Check(queued.pendingActions == count * 32 && sent.relayPackets == count && sent.relayActions == count * 32 &&
+                sent.relayBytes == count * (4 + 22 + 32 * 75) && sent.pendingActions == 0, "Fan-out accounting mismatch");
+            std::cout << "[METRICS] local recipients=" << count << " receivedPackets=" << queued.receivedPackets
+                << " receivedBytes=" << queued.receivedBytes << " pendingActions=" << queued.pendingActions
+                << " relayPackets=" << sent.relayPackets << " relayBytes=" << sent.relayBytes << '\n';
+            for (const auto& player : players) f.map.RemovePlayer(*player);
+        }
+    });
 }

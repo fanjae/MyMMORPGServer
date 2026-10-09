@@ -24,6 +24,16 @@ public:
     void Tick(uint64_t tick, std::chrono::steady_clock::time_point now);
     bool ReceiveMovementActions(Player& player, const MovementActionsHeader& header, const MovementAction* actions);
 
+    struct MovementMetrics
+    {
+        uint64_t receivedPackets = 0, receivedBytes = 0, rejectedPackets = 0;
+        uint64_t acceptedActions = 0, rejectedActions = 0;
+        uint64_t relayPackets = 0, relayBytes = 0, relayActions = 0, sendFailures = 0, queueOverflows = 0;
+        size_t pendingActions = 0, maxPendingPerRecipient = 0, peakPendingPerRecipient = 0;
+        int64_t oldestPendingMs = 0, maxRelayWaitMs = 0;
+    };
+    MovementMetrics TakeMovementMetrics();
+
     uint32_t GetMapId() const { return _definition.mapId; }
     int32_t GetSpawnX() const { return _definition.spawnX; }
     int32_t GetSpawnY() const { return _definition.spawnY; }
@@ -48,8 +58,9 @@ public:
 private:
     MapDefinition _definition;
     const MapGeometry* _geometry = nullptr;
-    struct PendingAction { RelayedMovementAction relay; uint64_t receivedTick; };
+    struct PendingAction { RelayedMovementAction relay; uint64_t receivedTick; std::chrono::steady_clock::time_point receivedAt; };
     std::unordered_map<uint32_t, std::deque<PendingAction>> _pendingActions;
+    MovementMetrics _movementMetrics;
     uint64_t _tick = 0;
     std::unordered_map<uint32_t, Player*> _players;
     std::unordered_map<uint32_t, Monster*> _monsters;
