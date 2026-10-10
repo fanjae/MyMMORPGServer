@@ -3,6 +3,7 @@
 #include "MapDefinition.h"
 #include "MovementSimulation.h"
 #include "../Protocol/GamePacket.h"
+#include "World3D.h"
 
 #include <cstdint>
 #include <unordered_map>
@@ -23,6 +24,11 @@ public:
     bool SendMovementState(Player& recipient, const Player& player, MovementStateReason reason = MovementStateReason::Normal);
     void Tick(uint64_t tick, std::chrono::steady_clock::time_point now);
     bool ReceiveMovementActions(Player& player, const MovementActionsHeader& header, const MovementAction* actions);
+    bool Is3D() const { return _world3D != nullptr; }
+    void SetWorld3D(const World3DDefinition& world) { _world3D = &world; }
+    bool SendWorld3D(Player& player);
+    bool SendState3D(Player& recipient, const Player& player);
+    bool ReceiveActions3D(Player& player, const MovementActionsHeader& header, const MovementAction3D* actions);
 
     struct MovementMetrics
     {
@@ -56,6 +62,10 @@ public:
     Monster* FindMonster(uint32_t monsterId) const;
 
 private:
+    void Tick3D(uint64_t tick, std::chrono::steady_clock::time_point now);
+    const World3DDefinition* _world3D = nullptr;
+    struct Pending3D { RelayedMovementAction3D relay; std::chrono::steady_clock::time_point receivedAt; };
+    std::unordered_map<uint32_t, std::deque<Pending3D>> _pending3D;
     MapDefinition _definition;
     const MapGeometry* _geometry = nullptr;
     struct PendingAction { RelayedMovementAction relay; uint64_t receivedTick; std::chrono::steady_clock::time_point receivedAt; };

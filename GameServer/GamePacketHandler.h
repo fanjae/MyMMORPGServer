@@ -19,4 +19,5 @@ private:
     static bool HandleChat(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleWhisper(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleMovementActions(GameSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleMovementActions3D(GameSession& session, const char* payload, uint16_t payloadSize);
 };

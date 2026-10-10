@@ -127,6 +127,18 @@ bool MapManager::LoadGeometry(const std::string& directory)
         return false;
     }
 
+    std::unordered_map<uint32_t, MapDefinition> maps3D;
+    for (const auto& entry : _geometries)
+        if (entry.second.movement.movementMode == MovementMode::Character3D)
+            maps3D.emplace(entry.first, entry.second.map);
+    if (!World3DLoader::Load(directory, maps3D, _worlds3D, error))
+    {
+        std::cerr << error << '\n';
+        _geometries.clear();
+        return false;
+    }
+    for (const auto& entry : _worlds3D)
+        _maps.at(entry.first)->SetWorld3D(entry.second);
     for (const auto& entry : _geometries)
         _maps.at(entry.first)->SetGeometry(entry.second);
 
@@ -192,7 +204,7 @@ void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
     for (const auto& entry : _maps)
     {
         Map& map = *entry.second;
-        if (!map.IsPlatformer())
+        if (!map.IsPlatformer() && !map.Is3D())
             continue;
         auto metrics = map.TakeMovementMetrics();
         std::cout << "Movement metrics: intervalMs=" << intervalMs << " map=" << map.GetMapId() << " players=" << map.GetPlayerCount()

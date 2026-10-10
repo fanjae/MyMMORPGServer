@@ -1,3 +1,5 @@
 mapId,geometryVersion,movementMode,spawnFootholdId,halfWidth,halfHeight,horizontalSpeed,jumpSpeed,gravity,maxFallSpeed
 100000000,1,Platformer,1,6,6,80,240,480,320
 100000001,1,Free,0,6,6,80,0,0,0
+100000002,1,Character3D,0,6,18,80,160,400,320
+100000003,1,Character3D,0,6,18,80,160,400,320

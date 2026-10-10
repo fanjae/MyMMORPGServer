@@ -33,7 +33,7 @@ try
     {
         $caseDirectory = Join-Path $fixtureRoot $case.Name
         New-Item -ItemType Directory -Path $caseDirectory | Out-Null
-        foreach ($name in @('maps.csv', 'map_movement.csv', 'footholds.csv', 'colliders.csv'))
+        foreach ($name in @('maps.csv', 'map_movement.csv', 'footholds.csv', 'colliders.csv', 'worlds3d.csv', 'boxes3d.csv'))
         {
             Copy-Item -LiteralPath (Join-Path $dataPath $name) -Destination $caseDirectory
         }

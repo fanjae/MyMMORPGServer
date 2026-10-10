@@ -7,7 +7,8 @@
 enum class MovementMode : uint8_t
 {
     Free = 0,
-    Platformer = 1
+    Platformer = 1,
+    Character3D = 2
 };
 
 struct FootholdDefinition

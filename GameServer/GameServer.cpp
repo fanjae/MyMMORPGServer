@@ -172,6 +172,7 @@ int main(int argc, char* argv[])
         });
 
     std::cout << "GameServer protocol version=" << GAME_PROTOCOL_VERSION << '\n';
+    std::cout << "GameServer 3D protocol version=" << GAME3D_PROTOCOL_VERSION << '\n';
     std::cout << "GameServer listening on " << listenConfig.clientBindIp << ":7777\n";
     std::cout << "GameServer ticket listener on 127.0.0.1:7778\n";
 

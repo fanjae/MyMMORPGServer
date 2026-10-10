@@ -6,6 +6,7 @@
 constexpr uint32_t MAX_PLAYER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
 constexpr uint32_t GAME_PROTOCOL_VERSION = 6;
+constexpr uint32_t GAME3D_PROTOCOL_VERSION = 7;
 constexpr uint16_t MAX_MOVEMENT_ACTIONS = 32;
 
 enum class GamePacketOpcode : uint16_t
@@ -33,7 +34,13 @@ enum class GamePacketOpcode : uint16_t
     ChatResponse = 21,
     WhisperMessage = 22,
     MovementActions = 23,
-    MovementActionsBroadcast = 24
+    MovementActionsBroadcast = 24,
+    World3D = 25,
+    WorldBox3D = 26,
+    WorldEnd3D = 27,
+    MovementState3D = 28,
+    MovementActions3D = 29,
+    MovementActionsBroadcast3D = 30
 };
 
 enum class EnterGameResult : uint8_t
@@ -70,6 +77,8 @@ enum class MovementStateReason : uint8_t { Normal = 0, Respawned = 1, InputRejec
 enum class MovementActionKind : uint8_t { Input = 0, Jump = 1, Land = 2, Checkpoint = 3, Respawn = 4, Fall = 5 };
 enum class ChatOperation : uint8_t { Map = 0, Whisper = 1 };
 enum class ChatResult : uint8_t { InvalidMessage = 0, RateLimited = 1, TargetNotFound = 2, DeliveryFailed = 3, InvalidTarget = 4 };
+
+#include "Movement3DPacket.h"
 
 #pragma pack(push, 1)
 

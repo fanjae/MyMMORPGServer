@@ -16,8 +16,11 @@
     <ClCompile Include="NetworkReliability.cpp" />
     <ClCompile Include="ChatTests.cpp" />
     <ClCompile Include="MovementAcknowledgementTests.cpp" />
+    <ClCompile Include="Movement3DTests.cpp" />
     <ClCompile Include="MovementRelayFixture.cpp" />
     <ClCompile Include="..\..\GameServer\Map.cpp" />
+    <ClCompile Include="..\..\GameServer\Map3D.cpp" />
+    <ClCompile Include="..\..\GameServer\World3D.cpp" />
     <ClCompile Include="..\..\GameServer\Player.cpp" />
     <ClCompile Include="..\..\GameServer\PlayerManager.cpp" />
     <ClCompile Include="..\..\GameServer\ChatService.cpp" />

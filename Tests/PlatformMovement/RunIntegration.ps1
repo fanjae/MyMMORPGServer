@@ -176,7 +176,11 @@ try
     # 원본 맵 데이터는 유지하고 자유 이동 회귀 테스트에만 별도 설정을 사용한다.
     $free = Join-Path $fixture 'free'
     New-Item -ItemType Directory -Path $free | Out-Null
-    Copy-Item -LiteralPath (Join-Path $serverRoot 'data/maps.csv') -Destination $free
+    # Free 회귀는 기존 2D 맵만 사용해 3D 전용 지형 파일이 필요하지 않도록 한다.
+    $freeMapRows = [IO.File]::ReadAllLines((Join-Path $serverRoot 'data/maps.csv')) | Where-Object {
+        $_.StartsWith('mapId,') -or $_.StartsWith('100000000,') -or $_.StartsWith('100000001,')
+    }
+    [IO.File]::WriteAllLines((Join-Path $free 'maps.csv'), [string[]]$freeMapRows, $utf8)
     $utf8 = [Text.UTF8Encoding]::new($false)
     [IO.File]::WriteAllLines((Join-Path $free 'map_movement.csv'), @('mapId,geometryVersion,movementMode,spawnFootholdId,halfWidth,halfHeight,horizontalSpeed,jumpSpeed,gravity,maxFallSpeed', '100000000,1,Free,0,6,6,80,0,0,0', '100000001,1,Free,0,6,6,80,0,0,0'), $utf8)
     [IO.File]::WriteAllText((Join-Path $free 'footholds.csv'), "mapId,footholdId,x1,y1,x2,y2,prevId,nextId`n", $utf8)

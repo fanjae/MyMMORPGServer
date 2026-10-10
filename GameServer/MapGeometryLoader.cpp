@@ -70,6 +70,13 @@ bool MapGeometryLoader::Validate(const MapGeometry& geometry, std::string& error
     if (geometry.footholds.size() > MaxObjectsPerMap || geometry.colliders.size() > MaxObjectsPerMap)
         return fail("Too many geometry objects");
 
+    if (movement.movementMode == MovementMode::Character3D)
+    {
+        if (!geometry.footholds.empty() || !geometry.colliders.empty() || movement.spawnFootholdId != 0)
+            return fail("3D map contains 2D geometry");
+        return true; // 3D 크기·spawn·박스 검증은 World3DLoader에서 함께 처리한다.
+    }
+
     if (movement.movementMode == MovementMode::Free)
     {
         if (movement.spawnFootholdId != 0 || movement.horizontalSpeed != map.moveSpeed || movement.jumpSpeed != 0 || movement.gravity != 0 || movement.maxFallSpeed != 0 || !geometry.footholds.empty() || !geometry.colliders.empty())
@@ -169,11 +176,12 @@ bool MapGeometryLoader::Load(const std::string& directory, const std::unordered_
         if (!ReadNumber(fields[0], mapId) || maps.find(mapId) == maps.end() || loaded.find(mapId) != loaded.end() || !ReadNumber(fields[1], movement.geometryVersion) || !ReadNumber(fields[3], movement.spawnFootholdId) || !ReadNumber(fields[4], movement.halfWidth) || !ReadNumber(fields[5], movement.halfHeight) || !ReadNumber(fields[6], movement.horizontalSpeed) || !ReadNumber(fields[7], movement.jumpSpeed) || !ReadNumber(fields[8], movement.gravity) || !ReadNumber(fields[9], movement.maxFallSpeed))
             return false;
 
-        if (fields[2] != "Free" && fields[2] != "Platformer")
+        if (fields[2] != "Free" && fields[2] != "Platformer" && fields[2] != "Character3D")
             return false;
 
         geometry.map = maps.at(mapId);
-        movement.movementMode = fields[2] == "Free" ? MovementMode::Free : MovementMode::Platformer;
+        movement.movementMode = fields[2] == "Free" ? MovementMode::Free :
+            fields[2] == "Platformer" ? MovementMode::Platformer : MovementMode::Character3D;
         loaded.emplace(mapId, std::move(geometry));
         return true;
     }, error);

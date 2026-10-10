@@ -107,13 +107,15 @@ int main(int argc, char* argv[])
         std::unordered_map<uint32_t, MapDefinition> maps;
         maps.emplace(100000000, MapDefinition{ 100000000, 0, 0, -400, 400, -200, 200, 80, 12 });
         maps.emplace(100000001, MapDefinition{ 100000001, 100, 50, -300, 500, -150, 250, 80, 12 });
+        maps.emplace(100000002, MapDefinition{ 100000002, 0, 0, -400, 400, -200, 400, 80, 12 });
+        maps.emplace(100000003, MapDefinition{ 100000003, -200, 0, -400, 400, -200, 400, 80, 12 });
         std::unordered_map<uint32_t, MapGeometry> geometries;
         std::string error;
 
         Run("Load sample geometry and Free mode", [&]
         {
             Check(MapGeometryLoader::Load(source.string(), maps, geometries, error), error);
-            Check(geometries.size() == 2 && geometries.at(100000000).footholds.size() == 5 && geometries.at(100000000).colliders.size() == 1, "Sample object counts");
+            Check(geometries.size() == 4 && geometries.at(100000000).footholds.size() == 5 && geometries.at(100000000).colliders.size() == 1, "Sample object counts");
             Check(geometries.at(100000001).movement.movementMode == MovementMode::Free, "Free mode changed");
         });
 
@@ -129,7 +131,7 @@ int main(int argc, char* argv[])
         std::vector<InvalidCase> cases
         {
             { "Duplicate movement map", "map_movement.csv", "100000000,1,Platformer,1,6,6,80,240,480,320", "100000000,1,Platformer,1,6,6,80,240,480,320\n100000000,1,Platformer,1,6,6,80,240,480,320" },
-            { "Unknown map", "map_movement.csv", "100000000,1,Platformer", "100000002,1,Platformer" },
+            { "Unknown map", "map_movement.csv", "100000000,1,Platformer", "100000099,1,Platformer" },
             { "Unknown mode", "map_movement.csv", "Platformer", "Unknown" },
             { "Invalid header", "map_movement.csv", "mapId,geometryVersion", "map,geometryVersion" },
             { "Extra column", "map_movement.csv", "80,240,480,320", "80,240,480,320,1" },
@@ -166,7 +168,7 @@ int main(int argc, char* argv[])
                 auto preserved = geometries;
                 preserved.at(100000000).movement.geometryVersion = 77;
                 Check(!MapGeometryLoader::Load(fixture.Path(), maps, preserved, error) && !error.empty(), "Invalid data accepted");
-                Check(preserved.size() == 2 && preserved.at(100000000).movement.geometryVersion == 77 && preserved.at(100000000).footholds.size() == 5, "Failed load replaced existing geometry");
+                Check(preserved.size() == 4 && preserved.at(100000000).movement.geometryVersion == 77 && preserved.at(100000000).footholds.size() == 5, "Failed load replaced existing geometry");
             });
         }
 
@@ -176,7 +178,7 @@ int main(int argc, char* argv[])
             fixture.Save("map_movement.csv", "mapId,geometryVersion,movementMode,spawnFootholdId,halfWidth,halfHeight,horizontalSpeed,jumpSpeed,gravity,maxFallSpeed\n100000000,1,Platformer,1,6,6,80,240,480,320\n");
             auto preserved = geometries;
             Check(!MapGeometryLoader::Load(fixture.Path(), maps, preserved, error) && error == "Movement settings are missing for a map", "Missing map settings not detected");
-            Check(preserved.size() == 2, "Missing settings cleared existing geometry");
+            Check(preserved.size() == 4, "Missing settings cleared existing geometry");
         });
 
         Run("Missing file preserves geometry", [&]

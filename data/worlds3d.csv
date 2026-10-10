@@ -1,0 +1,3 @@
+mapId,version,minZ,maxZ,spawnZ,radius,height,speed,jumpSpeed,gravity,maxFallSpeed
+100000002,1,-400,400,0,6,36,80,160,400,320
+100000003,1,-400,400,0,6,36,80,160,400,320

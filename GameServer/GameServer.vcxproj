@@ -146,6 +146,8 @@
     <ClCompile Include="GameServer.cpp" />
     <ClCompile Include="GameSession.cpp" />
     <ClCompile Include="Map.cpp" />
+    <ClCompile Include="Map3D.cpp" />
+    <ClCompile Include="World3D.cpp" />
     <ClCompile Include="MapManager.cpp" />
     <ClCompile Include="MapGeometryLoader.cpp" />
     <ClCompile Include="MovementSimulation.cpp" />
@@ -168,6 +170,7 @@
     <ClInclude Include="GamePacketHandler.h" />
     <ClInclude Include="GameSession.h" />
     <ClInclude Include="Map.h" />
+    <ClInclude Include="World3D.h" />
     <ClInclude Include="MapDefinition.h" />
     <ClInclude Include="MapGeometry.h" />
     <ClInclude Include="MapGeometryLoader.h" />
@@ -185,6 +188,7 @@
     <MakeDir Directories="$(OutDir)data" />
     <Copy SourceFiles="$(ProjectDir)..\data\maps.csv" DestinationFolder="$(OutDir)data" />
     <Copy SourceFiles="$(ProjectDir)..\data\map_movement.csv;$(ProjectDir)..\data\footholds.csv;$(ProjectDir)..\data\colliders.csv" DestinationFolder="$(OutDir)data" />
+    <Copy SourceFiles="$(ProjectDir)..\data\worlds3d.csv;$(ProjectDir)..\data\boxes3d.csv" DestinationFolder="$(OutDir)data" />
   </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

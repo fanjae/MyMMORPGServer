@@ -42,6 +42,8 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
 
     case GamePacketOpcode::MovementActions:
         return HandleMovementActions(session, payload, payloadSize);
+    case GamePacketOpcode::MovementActions3D:
+        return HandleMovementActions3D(session, payload, payloadSize);
 
     default:
         return false;
@@ -71,7 +73,7 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
     request.protocolVersion = 0;
     memcpy(&request, payload, payloadSize);
     EnterGameResponse response;
-    if (request.protocolVersion != GAME_PROTOCOL_VERSION)
+    if (request.protocolVersion != GAME_PROTOCOL_VERSION && request.protocolVersion != GAME3D_PROTOCOL_VERSION)
         response.result = EnterGameResult::ProtocolMismatch;
     else if (session.IsAuthenticated())
         response.result = EnterGameResult::AlreadyAuthenticated;
@@ -84,7 +86,10 @@ bool GamePacketHandler::HandleEnterGame(GameSession& session, const char* payloa
         if (!session.GetAuthTicketManager().Consume(request.authKey, ticket))
             response.result = EnterGameResult::InvalidAuthKey;
         else if (session.BeginCharacterLoad(ticket))
+        {
+            session.SetProtocolVersion(request.protocolVersion);
             return true;
+        }
         else
             response.result = EnterGameResult::CharacterLoadFailed;
     }
@@ -110,7 +115,7 @@ bool GamePacketHandler::CompleteEnterGame(GameSession& session, const AuthTicket
             response.result = EnterGameResult::AlreadyInGame;
         else
         {
-            Map* map = session.GetMapManager().FindMap(START_MAP_ID);
+            Map* map = session.GetMapManager().FindMap(session.GetProtocolVersion() == GAME3D_PROTOCOL_VERSION ? 100000002 : START_MAP_ID);
             if (map == nullptr || !map->AddPlayer(*player))
             {
                 session.GetPlayerManager().Remove(*player);
@@ -210,7 +215,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     response.x = player->GetX();
     response.y = player->GetY();
 
-    if (newMap == nullptr)
+    if (newMap == nullptr || newMap->Is3D() != (session.GetProtocolVersion() == GAME3D_PROTOCOL_VERSION))
     {
         response.result = ChangeMapResult::MapNotFound;
     }
@@ -302,6 +307,7 @@ bool GamePacketHandler::HandleWhisper(GameSession& session, const char* payload,
 
 bool GamePacketHandler::HandleMovementActions(GameSession& session, const char* payload, uint16_t payloadSize)
 {
+    if (session.GetProtocolVersion() != GAME_PROTOCOL_VERSION) return false;
     if (!session.IsAuthenticated() || payloadSize < sizeof(MovementActionsHeader))
         return false;
 
@@ -322,5 +328,20 @@ bool GamePacketHandler::HandleMovementActions(GameSession& session, const char* 
 
     // 상태 검증 실패에 즉시 응답을 보내지 않아 중계 전송률 상한을 우회하지 않는다.
     map->ReceiveMovementActions(*player, request, actions);
+    return true;
+}
+
+bool GamePacketHandler::HandleMovementActions3D(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || session.GetProtocolVersion() != GAME3D_PROTOCOL_VERSION ||
+        payloadSize < sizeof(MovementActionsHeader)) return false;
+    Player* player = session.GetPlayer();
+    if (player == nullptr || player->GetMap() == nullptr || !player->GetMap()->Is3D()) return false;
+    MovementActionsHeader header;
+    memcpy(&header, payload, sizeof(header));
+    if (header.count == 0 || header.count > MAX_MOVEMENT_ACTIONS || payloadSize != sizeof(header) + header.count * sizeof(MovementAction3D)) return false;
+    MovementAction3D actions[MAX_MOVEMENT_ACTIONS];
+    memcpy(actions, payload + sizeof(header), header.count * sizeof(MovementAction3D));
+    player->GetMap()->ReceiveActions3D(*player, header, actions);
     return true;
 }

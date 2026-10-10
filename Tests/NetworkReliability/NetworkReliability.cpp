@@ -139,7 +139,8 @@ namespace
 
 void RunChatTests();
 void RunMovementAcknowledgementTests();
-int RunMovementRelayFixture(uint16_t port);
+void RunMovement3DTests();
+int RunMovementRelayFixture(uint16_t port, bool threeD = false);
 
 int main(int argc, char* argv[])
 {
@@ -147,11 +148,11 @@ int main(int argc, char* argv[])
         return 1;
     try
     {
-        if (argc > 1 && std::string(argv[1]) == "--relay-fixture")
+        if (argc > 1 && (std::string(argv[1]) == "--relay-fixture" || std::string(argv[1]) == "--relay-3d-fixture"))
         {
             int requested = argc > 2 ? std::stoi(argv[2]) : 27779;
             Check(requested > 0 && requested <= 65535, "Invalid fixture port");
-            int result = RunMovementRelayFixture(static_cast<uint16_t>(requested));
+            int result = RunMovementRelayFixture(static_cast<uint16_t>(requested), std::string(argv[1]) == "--relay-3d-fixture");
             SocketUtils::Clear();
             return result;
         }
@@ -163,6 +164,7 @@ int main(int argc, char* argv[])
         }
         RunChatTests();
         RunMovementAcknowledgementTests();
+        RunMovement3DTests();
         auto run = [](const char* name, const std::function<void()>& test) { test(); std::cout << "[PASS] " << name << '\n'; };
         run("Client listen config keeps local default and rejects invalid addresses", []
         {

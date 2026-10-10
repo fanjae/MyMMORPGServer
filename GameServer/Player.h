@@ -33,6 +33,9 @@ public:
     bool AcceptMoveSequence(uint64_t sequence);
     void BeginMap();
     bool AcceptAction(const MovementAction& action);
+    bool AcceptAction3D(const MovementAction3D& action);
+    const MovementAction3D& GetState3D() const { return _state3D; }
+    void SetState3D(const MovementAction3D& state) { _state3D = state; }
     bool AcceptActionBatch(uint64_t generation, uint64_t sequence, uint64_t latestTick);
     uint64_t GetGeneration() const { return _generation; }
     uint64_t GetActionSequence() const { return _acceptedActionSequence; }
@@ -65,4 +68,5 @@ private:
     bool _airborne = false;
     std::chrono::steady_clock::time_point _nextMovementSend{};
     PlatformMovementState _platformState;
+    MovementAction3D _state3D;
 };

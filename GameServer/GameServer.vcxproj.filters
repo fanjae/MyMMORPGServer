@@ -42,6 +42,8 @@
     <ClCompile Include="Map.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="Map3D.cpp"><Filter>소스 파일</Filter></ClCompile>
+    <ClCompile Include="World3D.cpp"><Filter>소스 파일</Filter></ClCompile>
     <ClCompile Include="MapManager.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
@@ -86,6 +88,7 @@
     <ClInclude Include="Map.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="World3D.h"><Filter>헤더 파일</Filter></ClInclude>
     <ClInclude Include="MapDefinition.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>

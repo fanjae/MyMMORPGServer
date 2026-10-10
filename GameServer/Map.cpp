@@ -129,6 +129,15 @@ bool Map::AddPlayer(Player& player)
     player.SetMap(this);
     player.GetMovementValidator().Reset(_definition.moveSpeed, _definition.moveBurst);
     player.BeginMap();
+    if (Is3D())
+    {
+        const auto& s = _world3D->settings;
+        MovementAction3D state;
+        state.x = static_cast<int64_t>(s.spawnX) * 1000; state.y = static_cast<int64_t>(s.spawnY) * 1000;
+        state.z = static_cast<int64_t>(s.spawnZ) * 1000; state.supportId = _world3D->SpawnSupport();
+        player.SetState3D(state);
+        player.SetPosition(s.spawnX, s.spawnY);
+    }
     if (IsPlatformer())
     {
         // 초기 지형 상태만 설정한다. 이동·중력·착지 계산은 클라이언트가 수행한다.
@@ -151,6 +160,13 @@ void Map::RemovePlayer(Player& player)
 
     _players.erase(it);
     _pendingActions.erase(player.GetCharacterId());
+    _pending3D.erase(player.GetCharacterId());
+    for (auto& entry : _pending3D)
+    {
+        auto& queue = entry.second;
+        queue.erase(std::remove_if(queue.begin(), queue.end(), [&](const Pending3D& item)
+            { return item.relay.characterId == player.GetCharacterId(); }), queue.end());
+    }
     // 퇴장한 캐릭터의 이전 맵 행동을 나중에 중계하지 않는다.
     for (auto& entry : _pendingActions)
     {
@@ -165,7 +181,7 @@ void Map::RemovePlayer(Player& player)
 
 MoveResult Map::MovePlayer(Player& player, int32_t x, int32_t y)
 {
-    if (IsPlatformer())
+    if (IsPlatformer() || Is3D())
         return MoveResult::WrongMovementMode;
     auto it = _players.find(player.GetCharacterId());
 
@@ -260,9 +276,12 @@ bool Map::NotifyPlayerEntered(Player& player)
 
         if (IsPlatformer() && !SendMovementState(player, *existingPlayer))
             return false;
+        if (Is3D() && !SendState3D(player, *existingPlayer))
+            return false;
 
         // 기존 Player의 전송 실패는 해당 연결에만 적용하고 입장자의 전송은 계속한다.
-        if (!SendPlayerEnter(*existingSession, player) || (IsPlatformer() && !SendMovementState(*existingPlayer, player)))
+        if (!SendPlayerEnter(*existingSession, player) || (IsPlatformer() && !SendMovementState(*existingPlayer, player)) ||
+            (Is3D() && !SendState3D(*existingPlayer, player)))
             existingSession->RequestClose();
     }
 
@@ -287,6 +306,7 @@ bool Map::IsPlatformer() const
 
 bool Map::SendGeometry(Player& player)
 {
+    if (Is3D()) return SendWorld3D(player);
     Session* session = player.GetSession();
     if (_geometry == nullptr || session == nullptr)
         return false;
@@ -361,6 +381,7 @@ bool Map::SendMovementState(Player& recipient, const Player& player, MovementSta
 void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
 {
     _tick = tick;
+    if (Is3D()) { Tick3D(tick, now); return; }
     if (!IsPlatformer())
         return;
     std::vector<Session*> failed;
@@ -479,6 +500,17 @@ Map::MovementMetrics Map::TakeMovementMetrics()
 {
     MovementMetrics metrics = _movementMetrics;
     auto now = std::chrono::steady_clock::now();
+    for (const auto& entry : _pending3D)
+    {
+        const auto& queue = entry.second;
+        metrics.pendingActions += queue.size();
+        metrics.maxPendingPerRecipient = (std::max)(metrics.maxPendingPerRecipient, queue.size());
+        if (!queue.empty())
+        {
+            auto wait = std::chrono::duration_cast<std::chrono::milliseconds>(now - queue.front().receivedAt).count();
+            metrics.oldestPendingMs = (std::max)(metrics.oldestPendingMs, static_cast<int64_t>(wait));
+        }
+    }
     for (const auto& entry : _pendingActions)
     {
         const auto& queue = entry.second;

@@ -5,6 +5,7 @@
 #include <memory>
 #include "CharacterRepository.h"
 #include "AuthTicketManager.h"
+#include "../Protocol/GamePacket.h"
 
 class AuthTicketManager;
 class CharacterRepository;
@@ -22,6 +23,8 @@ public:
 
     bool IsAuthenticated() const { return _authenticated; }
     void SetAuthenticated(bool authenticated) { _authenticated = authenticated; }
+    uint32_t GetProtocolVersion() const { return _protocolVersion; }
+    void SetProtocolVersion(uint32_t version) { _protocolVersion = version; }
 
     uint32_t GetAccountId() const { return _accountId; }
     void SetAccountId(uint32_t accountId) { _accountId = accountId; }
@@ -54,6 +57,7 @@ private:
     uint32_t _accountId = 0;
     uint32_t _characterId = 0;
     bool _authenticated = false;
+    uint32_t _protocolVersion = GAME_PROTOCOL_VERSION;
     AuthTicket _pendingTicket;
     std::future<CharacterLoadResult> _characterLoad;
     std::shared_ptr<std::atomic<bool>> _loadCanceled;

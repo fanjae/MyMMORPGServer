@@ -24,6 +24,34 @@ void Player::BeginMap()
     _actionSequence = _acceptedActionSequence = _batchSequence = _latestClientTick = _actionTick = _jumpId = 0;
     _airborne = false;
     _platformState = {};
+    _state3D = {};
+}
+
+bool Player::AcceptAction3D(const MovementAction3D& action)
+{
+    if (action.sequence <= _actionSequence || action.clientTick < _actionTick) return false;
+    // 거절한 점프 번호도 소비해 착지 이후 같은 요청이 다시 실행되지 않게 한다.
+    _actionSequence = action.sequence;
+    switch (action.kind)
+    {
+    case MovementActionKind::Jump:
+    case MovementActionKind::Fall:
+        if (_airborne || !_state3D.grounded || action.grounded || action.jumpId <= _jumpId) return false;
+        _airborne = true; _jumpId = action.jumpId; break;
+    case MovementActionKind::Land:
+        if (!_airborne || action.jumpId != _jumpId || !action.grounded) return false;
+        _airborne = false; break;
+    case MovementActionKind::Respawn:
+        if (action.jumpId != _jumpId || !action.grounded) return false;
+        _airborne = false; break;
+    default:
+        if (action.jumpId != _jumpId || (action.grounded != 0) == _airborne) return false;
+        break;
+    }
+    _actionTick = action.clientTick; _acceptedActionSequence = action.sequence;
+    _state3D = action;
+    SetPosition(static_cast<int32_t>(std::llround(action.x / 1000.0)), static_cast<int32_t>(std::llround(action.y / 1000.0)));
+    return true;
 }
 
 bool Player::AcceptActionBatch(uint64_t generation, uint64_t sequence, uint64_t latestTick)
