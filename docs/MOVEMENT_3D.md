@@ -1,5 +1,7 @@
 # 3D 행동 중계 — 2026-10-10
 
+2026-10-11: 입력 보완·인벤토리·공유 순찰 몬스터를 추가하며 현재 3D protocol을 **8**로 갱신했다. 최신 실행과 기능은 [FIELD_FEATURES.md](FIELD_FEATURES.md), [README_3D.md](../../MyMMORPGClient_3D/README_3D.md)를 참고한다. 아래 version 7 설명은 10월 10일 구현 기록이다.
+
 기존 `MyMMORPGClient`의 version 6 발판 행동 중계는 유지하고, 새 `MyMMORPGClient_3D`의 실제 XYZ 이동을 별도 protocol version 7로 추가했다. 서버는 두 버전을 구분해 서로 다른 차원의 맵에 입장시킨다. Login protocol version은 공통 2다.
 
 ## 실행
