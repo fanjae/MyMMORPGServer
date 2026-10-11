@@ -1,13 +1,14 @@
 ﻿#include "CharacterRepository.h"
 
 #include <mysql/jdbc.h>
+#include "InventoryRepository.h"
 #include "../Protocol/CharacterName.h"
 
 #include <iostream>
 #include <memory>
 
 CharacterRepository::CharacterRepository(sql::Connection& connection)
-    : _connection(connection), _worker([this] { Run(); })
+    : _connection(connection), _inventory(std::make_unique<InventoryRepository>(connection)), _worker([this] { Run(); })
 {
 }
 
@@ -38,10 +39,27 @@ std::future<CharacterLoadResult> CharacterRepository::FindByIdAsync(uint32_t acc
         std::lock_guard<std::mutex> lock(_mutex);
         if (_stopping || _jobs.size() >= 64)
             return {};
-        _jobs.push(std::move(job));
+        _jobs.emplace([job = std::move(job)]() mutable { job(); });
     }
     _ready.notify_one();
     return result;
+}
+
+std::future<InventorySnapshotPacket> CharacterRepository::ApplyInventoryAsync(uint32_t accountId, uint32_t characterId,
+    InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled)
+{
+    // DB 잠금 대기는 작업 스레드에 맡기고 호출자는 완료 여부만 확인한다.
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    std::packaged_task<InventorySnapshotPacket()> job([this, accountId, characterId, request, canceled, deadline]
+    { return _inventory->Apply(accountId, characterId, request, canceled, deadline); });
+    auto result = job.get_future();
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        // 캐릭터 조회와 같은 대기열 한도를 적용해 DB 요청이 무한히 쌓이지 않도록 한다.
+        if (_stopping || _jobs.size() >= 64) return {};
+        _jobs.emplace([job = std::move(job)]() mutable { job(); });
+    }
+    _ready.notify_one(); return result;
 }
 
 void CharacterRepository::Run()
@@ -50,7 +68,7 @@ void CharacterRepository::Run()
     driver->threadInit();
     while (true)
     {
-        std::packaged_task<CharacterLoadResult()> job;
+        std::packaged_task<void()> job;
         {
             std::unique_lock<std::mutex> lock(_mutex);
             _ready.wait(lock, [this] { return _stopping || !_jobs.empty(); });

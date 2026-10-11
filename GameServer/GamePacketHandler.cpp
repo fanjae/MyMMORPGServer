@@ -44,6 +44,8 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
         return HandleMovementActions(session, payload, payloadSize);
     case GamePacketOpcode::MovementActions3D:
         return HandleMovementActions3D(session, payload, payloadSize);
+    case GamePacketOpcode::InventoryRequest:
+        return HandleInventory(session, payload, payloadSize);
 
     default:
         return false;
@@ -152,6 +154,25 @@ bool GamePacketHandler::CompleteEnterGame(GameSession& session, const AuthTicket
         return map.SendMapInfo(player) && map.SendGeometry(player) && map.NotifyPlayerEntered(player);
     }
     return true;
+}
+
+bool GamePacketHandler::HandleInventory(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    // 인증된 3D 연결만 처리하며 소유 캐릭터는 요청이 아닌 세션 정보에서 가져온다.
+    if (!session.IsAuthenticated() || session.GetProtocolVersion() != GAME3D_PROTOCOL_VERSION ||
+        session.GetPlayer() == nullptr || payloadSize != sizeof(InventoryRequestPacket)) return false;
+    InventoryRequestPacket request; memcpy(&request, payload, sizeof(request));
+    if (!session.BeginInventoryRequest(request)) return SendInventorySnapshot(session, session.InventoryError(InventoryResult::RateLimited));
+    return true;
+}
+
+bool GamePacketHandler::SendInventorySnapshot(GameSession& session, const InventorySnapshotPacket& snapshot)
+{
+    // 성공·거절 모두 전체 상태를 보내 클라이언트가 서버 기준으로 화면을 갱신한다.
+    PacketHeader header{static_cast<uint16_t>(sizeof(PacketHeader) + sizeof(snapshot)), static_cast<uint16_t>(GamePacketOpcode::InventorySnapshot)};
+    char bytes[sizeof(header) + sizeof(snapshot)];
+    memcpy(bytes, &header, sizeof(header)); memcpy(bytes + sizeof(header), &snapshot, sizeof(snapshot));
+    return session.Send(bytes, sizeof(bytes));
 }
 
 bool GamePacketHandler::HandleMove(GameSession& session, const char* payload, uint16_t payloadSize)

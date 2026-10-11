@@ -41,6 +41,8 @@ public:
     void SetPlayer(std::unique_ptr<Player> player);
     bool BeginCharacterLoad(const AuthTicket& ticket);
     bool IsAuthenticating() const { return _characterLoad.valid(); }
+    bool BeginInventoryRequest(const InventoryRequestPacket& request);
+    InventorySnapshotPacket InventoryError(InventoryResult result) const;
     void Update() override;
 
 protected:
@@ -62,4 +64,9 @@ private:
     std::future<CharacterLoadResult> _characterLoad;
     std::shared_ptr<std::atomic<bool>> _loadCanceled;
     std::chrono::steady_clock::time_point _loadDeadline;
+    std::future<InventorySnapshotPacket> _inventoryRequest;
+    std::shared_ptr<std::atomic<bool>> _inventoryCanceled;
+    std::chrono::steady_clock::time_point _inventoryDeadline{}, _nextInventoryRequest{};
+    // 오류 응답용 상태이며 실제 변경의 기준은 매번 DB에서 다시 조회한다.
+    InventorySnapshotPacket _lastInventory;
 };

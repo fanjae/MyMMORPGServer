@@ -291,7 +291,8 @@ bool Map::NotifyPlayerEntered(Player& player)
             return false;
     }
 
-    return true;
+    // 늦게 입장한 캐릭터도 다음 주기까지 기다리지 않고 현재 몬스터 상태를 받는다.
+    return !Is3D() || SendFieldMonsters(player);
 }
 
 void Map::SetGeometry(const MapGeometry& geometry)
@@ -381,7 +382,7 @@ bool Map::SendMovementState(Player& recipient, const Player& player, MovementSta
 void Map::Tick(uint64_t tick, std::chrono::steady_clock::time_point now)
 {
     _tick = tick;
-    if (Is3D()) { Tick3D(tick, now); return; }
+    if (Is3D()) { Tick3D(tick, now); TickFieldMonsters(tick, now); return; }
     if (!IsPlatformer())
         return;
     std::vector<Session*> failed;

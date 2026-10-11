@@ -5,12 +5,15 @@
 class GameSession;
 struct AuthTicket;
 struct CharacterLoadResult;
+struct InventorySnapshotPacket;
 
 class GamePacketHandler
 {
 public:
     static bool Handle(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize);
     static bool CompleteEnterGame(GameSession& session, const AuthTicket& ticket, CharacterLoadResult result);
+    // 비동기 DB 완료 결과와 요청 제한 오류에 같은 응답 형식을 사용한다.
+    static bool SendInventorySnapshot(GameSession& session, const InventorySnapshotPacket& snapshot);
 
 private:
     static bool HandleEnterGame(GameSession& session, const char* payload, uint16_t payloadSize);
@@ -20,4 +23,5 @@ private:
     static bool HandleWhisper(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleMovementActions(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleMovementActions3D(GameSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleInventory(GameSession& session, const char* payload, uint16_t payloadSize);
 };

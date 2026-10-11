@@ -138,7 +138,11 @@ bool MapManager::LoadGeometry(const std::string& directory)
         return false;
     }
     for (const auto& entry : _worlds3D)
+    {
         _maps.at(entry.first)->SetWorld3D(entry.second);
+        // 지형이 연결된 뒤에 생성해 시작 위치와 순찰의 충돌 기준을 사용할 수 있도록 한다.
+        _maps.at(entry.first)->SpawnFieldMonsters();
+    }
     for (const auto& entry : _geometries)
         _maps.at(entry.first)->SetGeometry(entry.second);
 

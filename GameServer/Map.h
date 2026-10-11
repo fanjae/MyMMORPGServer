@@ -10,6 +10,7 @@
 #include <memory>
 #include <chrono>
 #include <deque>
+#include <vector>
 
 class Monster;
 class Player;
@@ -29,6 +30,8 @@ public:
     bool SendWorld3D(Player& player);
     bool SendState3D(Player& recipient, const Player& player);
     bool ReceiveActions3D(Player& player, const MovementActionsHeader& header, const MovementAction3D* actions);
+    void SpawnFieldMonsters();
+    bool SendFieldMonsters(Player& recipient);
 
     struct MovementMetrics
     {
@@ -62,6 +65,11 @@ public:
     Monster* FindMonster(uint32_t monsterId) const;
 
 private:
+    // 캐릭터별 복제본 없이 Map이 몬스터의 순찰 위치와 정지 시간을 관리한다.
+    struct FieldMonster { uint32_t id; uint8_t kind; double x, y, z, left, right; int direction = 1; double rest = 0; };
+    std::vector<FieldMonster> _fieldMonsters;
+    void TickFieldMonsters(uint64_t tick, std::chrono::steady_clock::time_point now);
+    std::chrono::steady_clock::time_point _monsterUpdated{}, _monsterBroadcast{};
     void Tick3D(uint64_t tick, std::chrono::steady_clock::time_point now);
     const World3DDefinition* _world3D = nullptr;
     struct Pending3D { RelayedMovementAction3D relay; std::chrono::steady_clock::time_point receivedAt; };

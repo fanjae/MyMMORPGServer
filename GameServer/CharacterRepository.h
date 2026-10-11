@@ -9,6 +9,7 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+#include "../Protocol/FieldPacket.h"
 
 namespace sql
 {
@@ -21,6 +22,8 @@ enum class CharacterLoadStatus
     NotFound,
     DatabaseError
 };
+
+class InventoryRepository;
 
 struct CharacterData
 {
@@ -43,6 +46,8 @@ public:
     ~CharacterRepository();
 
     std::future<CharacterLoadResult> FindByIdAsync(uint32_t accountId, uint32_t characterId, std::shared_ptr<std::atomic<bool>> canceled);
+    std::future<InventorySnapshotPacket> ApplyInventoryAsync(uint32_t accountId, uint32_t characterId,
+        InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled);
 
 private:
     CharacterLoadResult FindById(uint32_t accountId, uint32_t characterId);
@@ -51,7 +56,9 @@ private:
     sql::Connection& _connection;
     std::mutex _mutex;
     std::condition_variable _ready;
-    std::queue<std::packaged_task<CharacterLoadResult()>> _jobs;
+    // 반환 형식이 다른 조회·인벤토리 작업도 하나의 Connection에서 순서대로 실행한다.
+    std::queue<std::packaged_task<void()>> _jobs;
     bool _stopping = false;
+    std::unique_ptr<InventoryRepository> _inventory;
     std::thread _worker;
 };

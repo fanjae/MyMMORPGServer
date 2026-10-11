@@ -147,6 +147,9 @@
     <ClCompile Include="GameSession.cpp" />
     <ClCompile Include="Map.cpp" />
     <ClCompile Include="Map3D.cpp" />
+    <ClCompile Include="FieldMonsters.cpp" />
+    <ClCompile Include="InventoryService.cpp" />
+    <ClCompile Include="InventoryRepository.cpp" />
     <ClCompile Include="World3D.cpp" />
     <ClCompile Include="MapManager.cpp" />
     <ClCompile Include="MapGeometryLoader.cpp" />
@@ -167,6 +170,8 @@
     <ClInclude Include="ChatService.h" />
     <ClInclude Include="ChatLimiter.h" />
     <ClInclude Include="CharacterRepository.h" />
+    <ClInclude Include="InventoryRepository.h" />
+    <ClInclude Include="InventoryService.h" />
     <ClInclude Include="GamePacketHandler.h" />
     <ClInclude Include="GameSession.h" />
     <ClInclude Include="Map.h" />
