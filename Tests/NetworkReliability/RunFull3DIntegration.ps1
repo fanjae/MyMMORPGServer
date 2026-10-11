@@ -10,7 +10,8 @@ $clientRoot = (Resolve-Path -LiteralPath $ClientDirectory).Path
 $gameExe = Join-Path $serverRoot 'x64/Release/GameServer.exe'
 $loginExe = Join-Path $serverRoot 'x64/Release/LoginServer.exe'
 $playerExe = Join-Path $clientRoot 'Builds/Movement3D/MyMMORPGClient_3D.exe'
-foreach ($path in @($gameExe, $loginExe, $playerExe))
+$inventoryExe = Join-Path $serverRoot 'x64/Release/InventoryDatabase.exe'
+foreach ($path in @($gameExe, $loginExe, $playerExe, $inventoryExe))
 {
     if (-not (Test-Path -LiteralPath $path)) { throw "Build the required executable first: $path" }
 }
@@ -81,14 +82,18 @@ try
     $ready = $false; $deadline = [DateTime]::UtcNow.AddSeconds(120)
     while ([DateTime]::UtcNow -lt $deadline)
     {
-        $rows = docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -Nse "SELECT COUNT(*) FROM mymmorpg_full_test.characters"' 2>$null
-        if ($LASTEXITCODE -eq 0 -and "$rows".Trim() -eq '3') { $ready = $true; break }
+        $rows = docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=TCP -h127.0.0.1 -uroot -Nse "SELECT (SELECT COUNT(*) FROM mymmorpg_full_test.characters) + (SELECT COUNT(*) FROM mymmorpg_full_test.item_definitions)"' 2>$null
+        if ($LASTEXITCODE -eq 0 -and "$rows".Trim() -eq '11') { $ready = $true; break }
         Start-Sleep -Milliseconds 1000
     }
     if (-not $ready) { throw 'Temporary MySQL initialization timed out.' }
     Write-Output '[PASS] MySQL initialized with isolated account/character fixtures'
     $env:DB_HOST = "tcp://127.0.0.1:$DatabasePort"; $env:DB_USER = 'full_test'
     $env:DB_PASSWORD = $databasePassword; $env:DB_NAME = 'mymmorpg_full_test'; $env:SERVER_BIND_IP = '127.0.0.1'
+    # 같은 임시 DB에서 저장·동시 요청·롤백·취소 검사를 먼저 수행한다.
+    & $inventoryExe *> (Join-Path $output 'inventory-database.log')
+    if ($LASTEXITCODE -ne 0) { throw "Inventory DB transaction checks failed. Inspect $output/inventory-database.log" }
+    Get-Content -LiteralPath (Join-Path $output 'inventory-database.log')
     $game = Start-TestServer $gameExe @(('"' + (Join-Path $serverRoot 'data/maps.csv') + '"')) 'game'
     $login = Start-TestServer $loginExe @() 'login'
     $ready = $false; $deadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -122,11 +127,16 @@ try
         $resultFile = Join-Path $output "player-$character/Logs/3d-smoke-full-$character.result"
         if ($players[$index].ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultFile)) { throw "Unity Player $character failed. Inspect $output" }
         $result = [IO.File]::ReadAllText($resultFile)
-        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=7')
+        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=8' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
         { throw "Full authentication path was not verified for $character. Inspect $output" }
-        Write-Output "[PASS] Unity Player ${character}: DB login, character list, auth ticket, v7 game entry, peer jump/land, rendering"
+        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v8 entry, peer jump/land, inventory, shared moving monsters, rendering"
         Write-Output $result
     }
+    # 실행 파일의 인벤토리가 DB에 저장되었는지와 파일 저장 경로를 사용하지 않았는지 확인한다.
+    $inventoryRows = docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -Nse "SELECT COUNT(*) FROM mymmorpg_full_test.character_inventories"'
+    if ($LASTEXITCODE -ne 0 -or "$inventoryRows".Trim() -ne '3') { throw 'Inventory header rows were not stored in MySQL.' }
+    if (Test-Path -LiteralPath (Join-Path $output 'inventory-data')) { throw 'Production server unexpectedly used file inventory storage.' }
+    Write-Output '[PASS] Actual Unity inventory snapshots came from MySQL; no inventory-data files created'
     $passed = $true
 }
 finally

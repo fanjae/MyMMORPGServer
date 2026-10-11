@@ -1,5 +1,6 @@
 #include "../../GameServer/Map.h"
 #include "../../GameServer/Player.h"
+#include "TestInventoryStore.h"
 #include "../../ServerCore/Session.h"
 #include "../../ServerCore/SocketUtils.h"
 #include "../../ServerCore/NetAddress.h"
@@ -31,7 +32,7 @@ namespace
 
 // DB 없이 실제 production Map 중계를 C# 클라이언트와 TCP로 검증하는 loopback 전용 서버.
 // 인증을 생략하는 테스트 전용 모드이며 외부 인터페이스에는 바인딩하지 않는다.
-int RunMovementRelayFixture(uint16_t port, bool threeD)
+int RunMovementRelayFixture(uint16_t port, bool threeD, bool field)
 {
     std::cout << std::unitbuf;
     SOCKET listener = SocketUtils::CreateSocket();
@@ -56,6 +57,9 @@ int RunMovementRelayFixture(uint16_t port, bool threeD)
         map3D = std::make_unique<Map>(definitions.at(100000002)); map3D->SetWorld3D(worlds.at(100000002));
     }
     Map& activeMap = threeD ? *map3D : map;
+    if (field) activeMap.SpawnFieldMonsters();
+    // 필드 검증의 인벤토리는 메모리에만 두고 실제 DB 저장은 별도 통합 검사에서 확인한다.
+    TestInventoryStore inventory;
     std::vector<std::unique_ptr<RelaySession>> sessions;
     auto start = std::chrono::steady_clock::now();
     uint64_t tick = 0;
@@ -103,6 +107,18 @@ int RunMovementRelayFixture(uint16_t port, bool threeD)
             while (session.received.size() >= sizeof(PacketHeader))
             {
                 PacketHeader frame; memcpy(&frame, session.received.data(), sizeof(frame));
+                if (field && frame.opcode == static_cast<uint16_t>(GamePacketOpcode::InventoryRequest))
+                {
+                    if (frame.size != sizeof(PacketHeader) + sizeof(InventoryRequestPacket)) throw std::runtime_error("Invalid fixture inventory request");
+                    if (session.received.size() < frame.size) break;
+                    InventoryRequestPacket request; memcpy(&request, session.received.data() + sizeof(frame), sizeof(request));
+                    auto snapshot = inventory.Apply(session.player->GetCharacterId(), request);
+                    PacketHeader response{static_cast<uint16_t>(sizeof(PacketHeader) + sizeof(snapshot)), static_cast<uint16_t>(GamePacketOpcode::InventorySnapshot)};
+                    char bytes[sizeof(response) + sizeof(snapshot)]; memcpy(bytes, &response, sizeof(response)); memcpy(bytes + sizeof(response), &snapshot, sizeof(snapshot));
+                    // 인벤토리는 요청한 캐릭터에게만 응답하고 Map 전체에는 중계하지 않는다.
+                    if (!session.Send(bytes, sizeof(bytes))) throw std::runtime_error("Fixture inventory response failed");
+                    session.received.erase(session.received.begin(), session.received.begin() + frame.size); continue;
+                }
                 if (threeD && frame.opcode == static_cast<uint16_t>(GamePacketOpcode::EnterGameRequest))
                 {
                     if (frame.size != sizeof(PacketHeader) + sizeof(EnterGameRequest)) throw std::runtime_error("Invalid 3D fixture handshake");

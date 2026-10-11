@@ -20,6 +20,9 @@
     <ClCompile Include="MovementRelayFixture.cpp" />
     <ClCompile Include="..\..\GameServer\Map.cpp" />
     <ClCompile Include="..\..\GameServer\Map3D.cpp" />
+    <ClCompile Include="..\..\GameServer\FieldMonsters.cpp" />
+    <ClCompile Include="..\..\GameServer\InventoryService.cpp" />
+    <ClCompile Include="FieldFeatureTests.cpp" />
     <ClCompile Include="..\..\GameServer\World3D.cpp" />
     <ClCompile Include="..\..\GameServer\Player.cpp" />
     <ClCompile Include="..\..\GameServer\PlayerManager.cpp" />

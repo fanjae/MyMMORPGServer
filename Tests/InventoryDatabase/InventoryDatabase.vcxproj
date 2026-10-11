@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{77831C1D-4DF4-40C4-B207-C4E7D34F8D93}</ProjectGuid><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v143</PlatformToolset></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup><OutDir>$(ProjectDir)..\..\x64\Release\</OutDir><IntDir>$(ProjectDir)obj\</IntDir></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><LanguageStandard>stdcpp17</LanguageStandard><WarningLevel>Level4</WarningLevel><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions><AdditionalIncludeDirectories>C:\Program Files\MySQL\MySQL Connector C++ 26.7\include</AdditionalIncludeDirectories></ClCompile>
+    <Link><SubSystem>Console</SubSystem><AdditionalLibraryDirectories>C:\Program Files\MySQL\MySQL Connector C++ 26.7\lib64\vs14;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>mysqlcppconn.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="InventoryDatabase.cpp" />
+    <ClCompile Include="..\..\GameServer\InventoryRepository.cpp" />
+    <ClCompile Include="..\..\GameServer\InventoryService.cpp" />
+    <ClCompile Include="..\..\GameServer\CharacterRepository.cpp" />
+    <ProjectReference Include="..\..\ServerCore\ServerCore.vcxproj"><Project>{5132C6E9-98BE-48AF-8D42-E7EE3D032E9E}</Project></ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

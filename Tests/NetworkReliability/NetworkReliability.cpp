@@ -140,7 +140,8 @@ namespace
 void RunChatTests();
 void RunMovementAcknowledgementTests();
 void RunMovement3DTests();
-int RunMovementRelayFixture(uint16_t port, bool threeD = false);
+void RunFieldFeatureTests();
+int RunMovementRelayFixture(uint16_t port, bool threeD = false, bool field = false);
 
 int main(int argc, char* argv[])
 {
@@ -148,11 +149,13 @@ int main(int argc, char* argv[])
         return 1;
     try
     {
-        if (argc > 1 && (std::string(argv[1]) == "--relay-fixture" || std::string(argv[1]) == "--relay-3d-fixture"))
+        if (argc > 1 && (std::string(argv[1]) == "--relay-fixture" || std::string(argv[1]) == "--relay-3d-fixture" || std::string(argv[1]) == "--field-3d-fixture"))
         {
             int requested = argc > 2 ? std::stoi(argv[2]) : 27779;
             Check(requested > 0 && requested <= 65535, "Invalid fixture port");
-            int result = RunMovementRelayFixture(static_cast<uint16_t>(requested), std::string(argv[1]) == "--relay-3d-fixture");
+            // 명시한 필드 검사에서만 몬스터 순찰과 테스트 인벤토리를 추가한다.
+            bool field = std::string(argv[1]) == "--field-3d-fixture";
+            int result = RunMovementRelayFixture(static_cast<uint16_t>(requested), std::string(argv[1]) != "--relay-fixture", field);
             SocketUtils::Clear();
             return result;
         }
@@ -165,6 +168,7 @@ int main(int argc, char* argv[])
         RunChatTests();
         RunMovementAcknowledgementTests();
         RunMovement3DTests();
+        RunFieldFeatureTests();
         auto run = [](const char* name, const std::function<void()>& test) { test(); std::cout << "[PASS] " << name << '\n'; };
         run("Client listen config keeps local default and rejects invalid addresses", []
         {
