@@ -54,7 +54,7 @@ void GameSession::Update()
     catch (const std::exception& exception) { std::cerr << "Inventory worker failed: " << exception.what() << '\n'; }
     // 저장 실패 응답은 마지막으로 확인한 상태를 유지해 화면이 기본 상태로 바뀌지 않도록 한다.
     if (result.result == InventoryResult::StorageError) result = InventoryError(result.result);
-    else _lastInventory = result;
+    else { _lastInventory = result; if (_player != nullptr) _player->SetVitals(result); }
     if (IsConnected() && IsAuthenticated() && !GamePacketHandler::SendInventorySnapshot(*this, result)) RequestClose();
 }
 

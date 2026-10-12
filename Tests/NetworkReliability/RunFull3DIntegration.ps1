@@ -2,7 +2,9 @@
 param(
     [string]$ClientDirectory = "$PSScriptRoot/../../../MyMMORPGClient_3D",
     [ValidateRange(1, 65535)][int]$DatabasePort = 3307,
-    [ValidateRange(10, 300)][int]$PlayerTimeoutSeconds = 60
+    [ValidateRange(10, 300)][int]$PlayerTimeoutSeconds = 60,
+    [switch]$ManualInput,
+    [ValidateRange(30, 1800)][int]$ManualTimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
 $serverRoot = (Resolve-Path -LiteralPath "$PSScriptRoot/../..").Path
@@ -31,7 +33,7 @@ $output = Join-Path $serverRoot ('artifacts/full-3d-' + $runId)
 [IO.Directory]::CreateDirectory($output) | Out-Null
 $envFile = Join-Path $output 'mysql-test.env'
 $databasePassword = [guid]::NewGuid().ToString('N')
-$environmentNames = @('DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'SERVER_BIND_IP')
+$environmentNames = @('DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'SERVER_BIND_IP', 'MMORPG_TEST_PASSWORD')
 $previousEnvironment = @{}
 foreach ($name in $environmentNames) { $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name) }
 $processes = [Collections.Generic.List[Diagnostics.Process]]::new()
@@ -56,8 +58,10 @@ function Start-TestPlayer([string]$account, [uint32]$character)
     [IO.Directory]::CreateDirectory($directory) | Out-Null
     $start = [Diagnostics.ProcessStartInfo]::new($playerExe)
     $start.WorkingDirectory = $directory; $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true; $start.WindowStyle = 'Hidden'
-    $start.ArgumentList.Add('--smoke-full'); $start.ArgumentList.Add('-logFile')
+    $start.CreateNoWindow = -not $ManualInput; $start.WindowStyle = $(if ($ManualInput) { 'Normal' } else { 'Hidden' })
+    $start.ArgumentList.Add($(if ($ManualInput) { '--manual-full' } else { '--smoke-full' }))
+    if ($ManualInput) { $start.ArgumentList.Add('--input-probe') }
+    $start.ArgumentList.Add('-logFile')
     $start.ArgumentList.Add((Join-Path $directory 'player.log'))
     # 테스트 프로세스에만 계정 정보를 넣고 명령줄과 검사 결과에는 비밀번호를 남기지 않는다.
     $start.Environment['MMORPG_TEST_LOGIN'] = $account
@@ -113,6 +117,29 @@ try
     }
     if (-not $ready) { throw 'LoginServer/GameServer startup timed out.' }
     Write-Output '[PASS] Actual LoginServer and GameServer listen on local ports 7776/7777/7778'
+    if ($ManualInput)
+    {
+        # 실제 키 검증은 자동 이동 인자를 쓰지 않고 완료 표시가 있을 때까지 두 창을 유지한다.
+        $manualPlayers = @((Start-TestPlayer 'test' 1002), (Start-TestPlayer 'test2' 2001))
+        Write-Output "MANUAL_READY: $output"
+        $deadline = [DateTime]::UtcNow.AddSeconds($ManualTimeoutSeconds)
+        while (-not (Test-Path -LiteralPath (Join-Path $output 'manual-finish')))
+        {
+            if ([DateTime]::UtcNow -ge $deadline -or $game.HasExited -or $login.HasExited -or @($manualPlayers | Where-Object HasExited).Count -gt 0)
+            { throw 'Manual keyboard verification ended before completion.' }
+            Start-Sleep -Milliseconds 500
+        }
+        foreach ($character in @(1002, 2001))
+        {
+            $evidence = Get-Content -Raw -LiteralPath (Join-Path $output "player-$character/Logs/input-probe.json") | ConvertFrom-Json
+            if ($evidence.mode -ne 'manual' -or $evidence.monsters -ne 3 -or $evidence.inventoryRevision -lt 1)
+            { throw 'Manual player did not receive authoritative field state.' }
+        }
+        $events = Get-Content -LiteralPath (Join-Path $output 'player-1002/Logs/input-probe-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json }
+        if (-not @($events | Where-Object { $_.jumpId -gt 0 -and $_.mode -eq 'manual' }).Count)
+        { throw 'No actual manual jump evidence; automatic startup is insufficient.' }
+        $passed = $true; return
+    }
     $players = @((Start-TestPlayer 'test' 1001), (Start-TestPlayer 'test2' 2001))
     $deadline = [DateTime]::UtcNow.AddSeconds($PlayerTimeoutSeconds)
     while (@($players | Where-Object { -not $_.HasExited }).Count -gt 0)
@@ -127,9 +154,9 @@ try
         $resultFile = Join-Path $output "player-$character/Logs/3d-smoke-full-$character.result"
         if ($players[$index].ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultFile)) { throw "Unity Player $character failed. Inspect $output" }
         $result = [IO.File]::ReadAllText($resultFile)
-        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=8' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
+        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=9' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
         { throw "Full authentication path was not verified for $character. Inspect $output" }
-        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v8 entry, peer jump/land, inventory, shared moving monsters, rendering"
+        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v9 entry, peer jump/land, inventory, shared moving monsters, rendering"
         Write-Output $result
     }
     # 실행 파일의 인벤토리가 DB에 저장되었는지와 파일 저장 경로를 사용하지 않았는지 확인한다.
@@ -137,6 +164,32 @@ try
     if ($LASTEXITCODE -ne 0 -or "$inventoryRows".Trim() -ne '3') { throw 'Inventory header rows were not stored in MySQL.' }
     if (Test-Path -LiteralPath (Join-Path $output 'inventory-data')) { throw 'Production server unexpectedly used file inventory storage.' }
     Write-Output '[PASS] Actual Unity inventory snapshots came from MySQL; no inventory-data files created'
+    # 실제 서버에 슬롯 조작을 요청한 뒤 두 서버를 재시작해 같은 DB 상태로 복귀하는지 확인한다.
+    $project = Join-Path $clientRoot 'Tests/Movement3D/Movement3D.csproj'
+    $env:MMORPG_TEST_PASSWORD = 'test1234'
+    dotnet run --project $project -- --field-server mutate 2>&1 | Tee-Object -FilePath (Join-Path $output 'field-mutations.log')
+    if ($LASTEXITCODE -ne 0) { throw 'Actual server inventory mutation checks failed.' }
+    foreach ($server in @($game, $login)) { Stop-Process -Id $server.Id; $server.WaitForExit(5000) | Out-Null }
+    $game = Start-TestServer $gameExe @(('"' + (Join-Path $serverRoot 'data/maps.csv') + '"')) 'game-restarted'
+    $login = Start-TestServer $loginExe @() 'login-restarted'
+    $deadline = [DateTime]::UtcNow.AddSeconds(15); $ready = $false
+    while ([DateTime]::UtcNow -lt $deadline)
+    {
+        if ($game.HasExited -or $login.HasExited) { throw 'Restarted server exited.' }
+        $ready = $true
+        foreach ($port in @(7776, 7777, 7778))
+        {
+            $probe = [Net.Sockets.TcpClient]::new()
+            try { $ready = $probe.ConnectAsync('127.0.0.1', $port).Wait(100) -and $probe.Connected -and $ready }
+            catch { $ready = $false }
+            finally { $probe.Dispose() }
+        }
+        if ($ready) { break }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $ready) { throw 'Restarted LoginServer registration timed out.' }
+    dotnet run --no-build --project $project -- --field-server verify 2>&1 | Tee-Object -FilePath (Join-Path $output 'field-restart.log')
+    if ($LASTEXITCODE -ne 0) { throw 'Server restart persistence or reentry checks failed.' }
     $passed = $true
 }
 finally
@@ -155,6 +208,6 @@ finally
     }
     if (Test-Path -LiteralPath $envFile) { Remove-Item -LiteralPath $envFile }
     foreach ($name in $environmentNames) { [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name]) }
-    [IO.File]::WriteAllText((Join-Path $output 'integration.result'), $(if ($passed) { 'PASS full local 3D connection' } else { 'FAILED full local 3D connection' }))
+    [IO.File]::WriteAllText((Join-Path $output 'integration.result'), $(if ($passed) { $(if ($ManualInput) { 'PASS manual local 3D input session; inspect event evidence' } else { 'PASS full local 3D connection and restart persistence' }) } else { 'FAILED full local 3D connection' }))
     Write-Output "Integration logs: $output"
 }

@@ -40,6 +40,16 @@ public:
     uint64_t GetGeneration() const { return _generation; }
     uint64_t GetActionSequence() const { return _acceptedActionSequence; }
     uint64_t GetJumpId() const { return _jumpId; }
+    void SetVitals(const InventorySnapshotPacket& state) { _hp = state.hp; _vitalsReady = true; }
+    bool CanAttack() const { return _vitalsReady && _hp > 0; }
+    BasicAttackResult BeginAttack(uint64_t sequence, std::chrono::steady_clock::time_point now)
+    {
+        if (!sequence || sequence <= _lastAttack) return BasicAttackResult::InvalidState;
+        _lastAttack = sequence;
+        if (!CanAttack()) return BasicAttackResult::Unavailable;
+        if (now < _nextAttack) return BasicAttackResult::Cooldown;
+        _nextAttack = now + std::chrono::milliseconds(500); return BasicAttackResult::Miss;
+    }
     bool IsAirborne() const { return _airborne; }
     uint64_t GetActionTick() const { return _actionTick; }
     bool CanSendMovement(std::chrono::steady_clock::time_point now) const { return now >= _nextMovementSend; }
@@ -48,6 +58,9 @@ public:
     const PlatformMovementState& GetPlatformState() const { return _platformState; }
 
 private:
+    // 공격 순서와 대기 시간은 Map 이동으로 초기화하지 않는다.
+    uint64_t _lastAttack = 0; uint16_t _hp = 0; bool _vitalsReady = false;
+    std::chrono::steady_clock::time_point _nextAttack{};
     uint32_t _characterId = 0;
     uint32_t _accountId = 0;
     std::string _name;

@@ -6,8 +6,8 @@
 constexpr uint32_t MAX_PLAYER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
 constexpr uint32_t GAME_PROTOCOL_VERSION = 6;
-// 인벤토리와 필드 몬스터 패킷을 사용하는 3D 연결은 version 8로 확인한다.
-constexpr uint32_t GAME3D_PROTOCOL_VERSION = 8;
+// 몬스터 HP와 기본 공격 패킷을 사용하는 3D 연결은 version 9로 확인한다.
+constexpr uint32_t GAME3D_PROTOCOL_VERSION = 9;
 constexpr uint16_t MAX_MOVEMENT_ACTIONS = 32;
 
 enum class GamePacketOpcode : uint16_t
@@ -44,7 +44,9 @@ enum class GamePacketOpcode : uint16_t
     MovementActionsBroadcast3D = 30,
     InventoryRequest = 31,
     InventorySnapshot = 32,
-    FieldMonsters3D = 33
+    FieldMonsters3D = 33,
+    BasicAttackRequest3D = 34,
+    BasicAttackEvent3D = 35
 };
 
 enum class EnterGameResult : uint8_t

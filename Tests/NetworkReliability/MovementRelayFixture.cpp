@@ -107,12 +107,21 @@ int RunMovementRelayFixture(uint16_t port, bool threeD, bool field)
             while (session.received.size() >= sizeof(PacketHeader))
             {
                 PacketHeader frame; memcpy(&frame, session.received.data(), sizeof(frame));
+                if (field && frame.opcode == static_cast<uint16_t>(GamePacketOpcode::BasicAttackRequest3D))
+                {
+                    if (frame.size != sizeof(PacketHeader) + sizeof(BasicAttackRequest)) throw std::runtime_error("Invalid fixture attack request");
+                    if (session.received.size() < frame.size) break;
+                    BasicAttackRequest request; memcpy(&request, session.received.data() + sizeof(frame), sizeof(request));
+                    if (!activeMap.AttackField(*session.player, request, std::chrono::steady_clock::now())) throw std::runtime_error("Attack fixture failed");
+                    session.received.erase(session.received.begin(), session.received.begin() + frame.size); continue;
+                }
                 if (field && frame.opcode == static_cast<uint16_t>(GamePacketOpcode::InventoryRequest))
                 {
                     if (frame.size != sizeof(PacketHeader) + sizeof(InventoryRequestPacket)) throw std::runtime_error("Invalid fixture inventory request");
                     if (session.received.size() < frame.size) break;
                     InventoryRequestPacket request; memcpy(&request, session.received.data() + sizeof(frame), sizeof(request));
                     auto snapshot = inventory.Apply(session.player->GetCharacterId(), request);
+                    session.player->SetVitals(snapshot);
                     PacketHeader response{static_cast<uint16_t>(sizeof(PacketHeader) + sizeof(snapshot)), static_cast<uint16_t>(GamePacketOpcode::InventorySnapshot)};
                     char bytes[sizeof(response) + sizeof(snapshot)]; memcpy(bytes, &response, sizeof(response)); memcpy(bytes + sizeof(response), &snapshot, sizeof(snapshot));
                     // 인벤토리는 요청한 캐릭터에게만 응답하고 Map 전체에는 중계하지 않는다.

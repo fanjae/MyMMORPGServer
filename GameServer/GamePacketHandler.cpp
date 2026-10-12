@@ -44,6 +44,8 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
         return HandleMovementActions(session, payload, payloadSize);
     case GamePacketOpcode::MovementActions3D:
         return HandleMovementActions3D(session, payload, payloadSize);
+    case GamePacketOpcode::BasicAttackRequest3D:
+        return HandleAttack(session, payload, payloadSize);
     case GamePacketOpcode::InventoryRequest:
         return HandleInventory(session, payload, payloadSize);
 
@@ -154,6 +156,14 @@ bool GamePacketHandler::CompleteEnterGame(GameSession& session, const AuthTicket
         return map.SendMapInfo(player) && map.SendGeometry(player) && map.NotifyPlayerEntered(player);
     }
     return true;
+}
+
+bool GamePacketHandler::HandleAttack(GameSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (!session.IsAuthenticated() || session.GetProtocolVersion() != GAME3D_PROTOCOL_VERSION ||
+        session.GetPlayer() == nullptr || session.GetPlayer()->GetMap() == nullptr || payloadSize != sizeof(BasicAttackRequest)) return false;
+    BasicAttackRequest request; memcpy(&request, payload, sizeof(request));
+    return session.GetPlayer()->GetMap()->AttackField(*session.GetPlayer(), request, std::chrono::steady_clock::now());
 }
 
 bool GamePacketHandler::HandleInventory(GameSession& session, const char* payload, uint16_t payloadSize)

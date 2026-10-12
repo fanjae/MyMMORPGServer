@@ -48,6 +48,10 @@ void RunFieldFeatureTests()
     Check(full.hp == full.maxHp && noOp.result == InventoryResult::CannotUse && noOp.entries[24].quantity == full.entries[24].quantity,
         "Full health potion consumed inventory");
     std::cout << "[PASS] Inventory rules reject corrupt states and full-health consumption\n";
+    auto limited = original; limited.entries[24].quantity = 100; limited.entries[28].quantity = 100;
+    auto unchanged = InventoryService::Apply(limited, {InventoryOperation::Move, 1, 4, 0, limited.revision});
+    Check(unchanged.revision == limited.revision && unchanged.entries[28].quantity == 100, "Full stack merge lost quantity or changed revision");
+    std::cout << "[PASS] Full stack merge preserves quantity and skips unnecessary mutation\n";
 
     // 같은 필드의 두 캐릭터는 같은 순찰 상태를 받고 다른 필드에는 전달되지 않아야 한다.
     World3DDefinition world; world.settings = {100000002, 0, 1, -400, -200, -400, 400, 400, 400, 6, 36, 80, 160, 400, 320, 0, 0, 0, 1};
@@ -71,4 +75,68 @@ void RunFieldFeatureTests()
     Check(header.generation == pb.GetGeneration() && header.count == 3, "Reentry monster generation/count wrong");
     b.fail = true; map.Tick(90, now + std::chrono::milliseconds(1800)); Check(b.IsCloseRequested() && !a.IsCloseRequested(), "Monster send failure affected healthy peer");
     std::cout << "[PASS] Shared monster patrol, bounded broadcasts, map isolation, reentry and send failure isolation\n";
+
+
+    // 서버의 확정 위치·방향·행동 번호에서만 피해를 계산하고 같은 필드에 결과를 공유한다.
+    {
+        Map arena({100000002, 0, 0, -400, 400, -200, 400, 80, 12}); arena.SetWorld3D(world); arena.SpawnFieldMonsters(1);
+        Capture attacker, observer; Player hero(8001, 8, "hero", 1), peer(8002, 9, "peer", 1);
+        hero.SetSession(&attacker); peer.SetSession(&observer); arena.AddPlayer(hero); arena.AddPlayer(peer);
+        hero.SetVitals(InventoryService::Starter());
+        auto state = hero.GetState3D(); state.x = -160000; state.z = -130000; state.y = 0; state.yaw = 0; hero.SetState3D(state);
+        BasicAttackRequest attackRequest{arena.GetMapId(), hero.GetGeneration(), 1, hero.GetActionSequence()};
+        auto send = [&](uint64_t sequence, int milliseconds)
+        {
+            attackRequest.sequence = sequence; Check(arena.AttackField(hero, attackRequest, now + std::chrono::milliseconds(milliseconds)), "Attack send failed");
+            BasicAttackEvent event; memcpy(&event, attacker.packets.back().data() + sizeof(PacketHeader), sizeof(event)); return event;
+        };
+        auto hit = send(1, 0); Check(hit.result == BasicAttackResult::Hit && hit.hp == 40 && hit.damage == 20 &&
+            observer.packets.back() == attacker.packets.back(), "Hit not shared or damage wrong");
+        auto duplicateAttack = send(1, 600); Check(duplicateAttack.result == BasicAttackResult::InvalidState, "Duplicate attack applied");
+        auto cooldown = send(2, 100); Check(cooldown.result == BasicAttackResult::Cooldown, "Attack cooldown bypassed");
+        attackRequest.generation = hero.GetGeneration() + 1; Check(send(3, 600).result == BasicAttackResult::InvalidState, "Old map attack accepted"); attackRequest.generation = hero.GetGeneration();
+        state.yaw = 18000; hero.SetState3D(state); Check(send(3, 600).result == BasicAttackResult::Miss, "Back-facing attack hit");
+        state.yaw = 0; state.z = -300000; hero.SetState3D(state); Check(send(4, 1200).result == BasicAttackResult::Miss, "Out-of-range attack hit");
+        state.z = -130000; hero.SetState3D(state); Check(send(5, 1800).hp == 20 && send(6, 2400).result == BasicAttackResult::Killed, "Monster death missing");
+        Check(send(7, 3000).result == BasicAttackResult::Miss, "Dead monster attacked");
+        arena.Tick(400, now + std::chrono::seconds(8)); arena.SendFieldMonsters(hero);
+        FieldMonsterRecord respawn; memcpy(&respawn, attacker.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonstersHeader), sizeof(respawn));
+        Check(respawn.hp == 60 && respawn.revision == 5, "Monster respawn reset revision or HP incorrectly");
+        World3DDefinition blocked = world; blocked.boxes.push_back({100000002, 0, 2, -180, 0, -120, -140, 60, -115});
+        Map wall({100000002, 0, 0, -400, 400, -200, 400, 80, 12}); wall.SetWorld3D(blocked); wall.SpawnFieldMonsters(1); arena.RemovePlayer(hero); wall.AddPlayer(hero); hero.SetState3D(state);
+        attackRequest.mapId = wall.GetMapId(); attackRequest.generation = hero.GetGeneration(); attackRequest.sequence = 8;
+        wall.AttackField(hero, attackRequest, now + std::chrono::seconds(9));
+        BasicAttackEvent missed; memcpy(&missed, attacker.packets.back().data() + sizeof(PacketHeader), sizeof(missed)); Check(missed.result == BasicAttackResult::Miss, "Attack crossed a wall");
+        auto dead = InventoryService::Starter(); dead.hp = 0; hero.SetVitals(dead); attackRequest.sequence = 9;
+        wall.AttackField(hero, attackRequest, now + std::chrono::seconds(10)); memcpy(&missed, attacker.packets.back().data() + sizeof(PacketHeader), sizeof(missed));
+        Check(missed.result == BasicAttackResult::Unavailable, "Zero-HP character attacked");
+        std::cout << "[PASS] Basic attack damage, shared results, cooldown, duplicate/map/range/facing/wall guards, death and respawn\n";
+    }
+
+    // 수신자가 늘어도 공통 패킷 구성 횟수는 방송 주기 수와 같아야 한다.
+    for (uint16_t count : {uint16_t{3}, uint16_t{32}, uint16_t{128}})
+    {
+        Map load({100000002, 0, 0, -400, 400, -200, 400, 80, 12}); load.SetWorld3D(world); load.SpawnFieldMonsters(count);
+        std::vector<std::unique_ptr<Capture>> peers;
+        std::vector<std::unique_ptr<Player>> players;
+        for (uint32_t i = 0; i < 32; ++i)
+        {
+            peers.push_back(std::make_unique<Capture>()); players.push_back(std::make_unique<Player>(i + 1, i + 1, "load", uint16_t{1}));
+            players.back()->SetSession(peers.back().get()); Check(load.AddPlayer(*players.back()), "Load entry failed");
+        }
+        auto started = std::chrono::steady_clock::now();
+        for (uint64_t tick = 1; tick <= 100; ++tick) load.Tick(tick, now + std::chrono::milliseconds(tick * 20));
+        auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        auto metrics = load.TakeFieldMonsterMetrics();
+        Check(metrics.packets == metrics.builds * peers.size() && metrics.builds == 10 && metrics.failures == 0,
+            "Monster packet rebuilt per recipient or cadence changed");
+        FieldMonstersHeader snapshot; memcpy(&snapshot, peers.front()->packets.back().data() + sizeof(PacketHeader), sizeof(snapshot));
+        Check(snapshot.count == count && peers.front()->packets.back().size() <= MAX_PACKET_SIZE, "Monster load packet count/size invalid");
+        std::cout << "[PASS] Monster load count=" << count << " peers=32 builds=" << metrics.builds << " packets=" << metrics.packets
+            << " bytes=" << metrics.bytes << " cpuMs=" << elapsed << '\n';
+        for (auto& player : players) load.RemovePlayer(*player);
+        load.Tick(200, now + std::chrono::seconds(4));
+        Check(load.TakeFieldMonsterMetrics().simulated == 0, "Unoccupied field continued monster simulation");
+    }
+
 }

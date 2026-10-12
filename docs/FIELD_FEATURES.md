@@ -1,6 +1,6 @@
 # 3D 입력·인벤토리·공유 몬스터 — 2026-10-11
 
-3D 연결은 protocol 8로 갱신했다. 기존 2D version 6, Login version 2와 기존 opcode 1~30의 wire layout은 유지한다. 이전 3D version 7 실행 파일은 새 서버에 입장할 수 없으므로 함께 갱신한다.
+현재 3D 연결은 기본 공격을 포함한 protocol 9를 사용한다. 기존 2D version 6, Login version 2와 기존 opcode 1~30의 wire layout은 유지한다. 이전 3D version 7/8 실행 파일은 새 서버에 입장할 수 없으므로 함께 갱신한다.
 
 ## 추가 패킷
 
@@ -8,9 +8,11 @@
 |---|---|---:|
 | 31 | InventoryRequest: operation/category/source/target 각 u8, revision u64 | 12 |
 | 32 | InventorySnapshot: revision/mesos u64, HP/maxHP/MP/maxMP u16, result/slots u8, 120개 itemId u32 + quantity u16 | 746 |
-| 33 | FieldMonsters3D: mapId u32, generation/tick u64, count u16, count개 monsterId u32 + kind u8 + XYZ i32 + yaw u16 | 22 + 19N |
+| 33 | FieldMonsters3D: mapId u32, generation/tick u64, count u16, count개 monsterId u32 + kind u8 + XYZ i32 + yaw u16 + HP/maxHP u16 + revision u64 | 22 + 31N |
+| 34 | BasicAttackRequest3D: mapId u32 + generation/sequence/actionSequence u64 | 28 |
+| 35 | BasicAttackEvent3D: mapId u32 + generation/sequence u64 + characterId u32 + result u8 + monsterId u32 + HP/maxHP u16 + revision u64 + damage/yaw u16 | 45 |
 
-별도 4바이트 게임 헤더를 사용한다. 몬스터 XYZ는 서버 단위 * 1000, yaw는 1/100도다. 현재 맵당 3마리로 몬스터 메시지 총 크기는 83바이트다.
+별도 4바이트 게임 헤더를 사용한다. 몬스터 XYZ는 서버 단위 * 1000, yaw는 1/100도다. 현재 맵당 3마리로 몬스터 메시지 총 크기는 119바이트다.
 
 ## 권한과 저장
 
@@ -31,12 +33,12 @@ MapManager가 지형 로딩 후 각 3D Map에 순찰 몬스터를 등록한다. 
 
 입장 시 현재 상태를 보내고 이후 수신자별 generation을 붙여 같은 필드 상태를 중계한다. 맵을 나간 플레이어에게 보내지 않으며 송신 실패는 해당 세션만 종료 대상으로 둔다. 클라이언트는 이전 Map/generation 또는 이전 tick의 상태를 무시하고, 최신 목록에서 사라진 몬스터를 제거한다.
 
-현재 몬스터는 기본 순찰만 제공하며 전투 AI나 클라이언트가 몬스터 위치를 보고하는 패킷은 없다. 몬스터 메시지와 인벤토리 메시지는 캐릭터 행동 송신 5회 상한에 포함하지 않는다.
+몬스터는 순찰과 서버 판정의 기본 공격·피격·사망·재생성을 제공한다. 플레이어를 공격하는 AI나 클라이언트가 몬스터 위치를 보고하는 패킷은 없다. 몬스터 메시지와 인벤토리 메시지는 캐릭터 행동 송신 5회 상한에 포함하지 않는다.
 
 ## 확인된 결과
 
 - 서버 회귀 검사: 인벤토리 병합·중복 요청 배제·포션 소비·소유자 격리·잘못된 상태 거절, 몬스터 순찰·같은 tick 상태 공유·맵 격리·재입장·송신 실패 격리 통과.
-- 실제 MySQL 검사 6개 묶음: 소유자 검증·초기 생성, 조작·재연결 유지, 두 Connection의 동시 소비, SQL 오류 시 전체 롤백, 잘못된 DB 수량 보존, 비동기 제출·대기 작업 취소 통과.
+- 실제 MySQL 검사 9개 묶음: 소유자 검증·초기 생성, 조작·재연결 유지, 두 Connection의 동시 소비, SQL 오류 시 전체 롤백, 잘못된 DB 수량 보존, 비동기 제출·대기 작업 취소, DB 연결 종료 후 조회 복구, 변경 슬롯 쓰기 횟수, 공유 작업 큐의 캐릭터 조회 복구 통과.
 - 두 C# TCP 클라이언트: 슬롯 병합·정렬·소비·오래된 revision 거절, 늦은 입장과 같은 tick의 몬스터 좌표 일치 통과.
 - 기존 3D 클라이언트 이동 검사 8개 및 0ms/80±35ms/150±60ms 지연·지터 TCP 검사 통과.
 - 실제 LoginServer/GameServer/임시 MySQL과 두 Unity Player: 인증 경로, 상대 점프·착지, 인벤토리 수신, 움직이는 몬스터 3마리와 렌더링 통과.
@@ -46,3 +48,7 @@ MapManager가 지형 로딩 후 각 3D Map에 순찰 몬스터를 등록한다. 
 실제 입력 기록은 3D 저장소 `artifacts/input-verification/Logs/input-probe.json`에 보존했다. 입력 횟수 필드는 InputSystem/창 이벤트 관측 횟수이며, 실제 점프 실행은 `jumpId`와 물리 상태로 판단한다. 사람이 Space를 계속 누른 채 착지하는 시나리오는 이 기록만으로 확인했다고 간주하지 않는다.
 
 실제 창 키 이벤트 검증은 `--input-probe`의 별도 기록으로 구분한다. 자동 이동 smoke 결과를 사람의 키보드 입력 확인으로 기록하지 않는다. 실행·조작은 [README_3D.md](../../MyMMORPGClient_3D/README_3D.md)를 참고한다.
+
+## 2026-10-12 보완
+
+입력 차단·인벤토리 조회 복구·DB 변경 슬롯 저장·몬스터 보간과 부하 검증은 [FIELD_HARDENING_2026-10-12.md](FIELD_HARDENING_2026-10-12.md)에 정리했다. 이 보완 시점에는 version 8을 사용했으며, 이후 기본 공격 추가로 현재 프로토콜은 version 9다. 기존 DB 스키마는 유지한다. 공격·하단 HP/MP·검증은 [BASIC_ATTACK_3D.md](BASIC_ATTACK_3D.md)를 참고한다.

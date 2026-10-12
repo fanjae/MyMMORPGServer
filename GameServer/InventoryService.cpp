@@ -91,6 +91,11 @@ InventorySnapshotPacket InventoryService::Apply(const InventorySnapshotPacket& s
         else reply.mp = static_cast<uint16_t>((std::min)(uint32_t{reply.maxMp}, uint32_t{reply.mp} + 20));
         if (!--source.quantity) source = {};
     }
+    // 정렬된 목록이나 꽉 찬 중첩 슬롯처럼 상태가 그대로면 DB 쓰기와 변경 번호 발급을 생략한다.
+    bool changed = reply.hp != state.hp || reply.mp != state.mp;
+    for (size_t i = 0; i < INVENTORY_CATEGORIES * INVENTORY_SLOTS && !changed; ++i)
+        changed = reply.entries[i].itemId != state.entries[i].itemId || reply.entries[i].quantity != state.entries[i].quantity;
+    if (!changed) return reply;
     // 성공한 변경의 새 번호를 반환해 같은 요청이 다시 적용되지 않도록 한다.
     ++reply.revision;
     return reply;

@@ -30,8 +30,11 @@ public:
     bool SendWorld3D(Player& player);
     bool SendState3D(Player& recipient, const Player& player);
     bool ReceiveActions3D(Player& player, const MovementActionsHeader& header, const MovementAction3D* actions);
-    void SpawnFieldMonsters();
+    void SpawnFieldMonsters(uint16_t count = 3);
     bool SendFieldMonsters(Player& recipient);
+    bool AttackField(Player& player, const BasicAttackRequest& request, std::chrono::steady_clock::time_point now);
+    struct FieldMonsterMetrics { uint64_t builds = 0, packets = 0, bytes = 0, failures = 0, simulated = 0; };
+    FieldMonsterMetrics TakeFieldMonsterMetrics() { auto result = _monsterMetrics; _monsterMetrics = {}; return result; }
 
     struct MovementMetrics
     {
@@ -66,8 +69,12 @@ public:
 
 private:
     // 캐릭터별 복제본 없이 Map이 몬스터의 순찰 위치와 정지 시간을 관리한다.
-    struct FieldMonster { uint32_t id; uint8_t kind; double x, y, z, left, right; int direction = 1; double rest = 0; };
+    struct FieldMonster { uint32_t id; uint8_t kind; double x, y, z, left, right; int direction = 1; double rest = 0; uint16_t hp = 60; uint64_t revision = 1; std::chrono::steady_clock::time_point respawnAt{}; };
     std::vector<FieldMonster> _fieldMonsters;
+    // 같은 tick의 공통 목록을 한 번만 만들고 수신자 입장 번호만 바꿔 전송한다.
+    std::vector<char> _monsterPacket;
+    uint64_t _monsterPacketTick = UINT64_MAX;
+    FieldMonsterMetrics _monsterMetrics;
     void TickFieldMonsters(uint64_t tick, std::chrono::steady_clock::time_point now);
     std::chrono::steady_clock::time_point _monsterUpdated{}, _monsterBroadcast{};
     void Tick3D(uint64_t tick, std::chrono::steady_clock::time_point now);

@@ -90,6 +90,8 @@ CharacterLoadResult CharacterRepository::FindById(uint32_t accountId, uint32_t c
 
     try
     {
+        // 인벤토리와 공유하는 연결이 끊겼다면 새 입장 조회에서도 복구할 수 있도록 한다.
+        if (!_inventory->TryReconnect()) return queryResult;
         std::unique_ptr<sql::PreparedStatement> statement(_connection.prepareStatement(
             "SELECT id, account_id, name, level "
             "FROM characters "
@@ -122,6 +124,7 @@ CharacterLoadResult CharacterRepository::FindById(uint32_t accountId, uint32_t c
     }
     catch (const sql::SQLException& e)
     {
+        _inventory->ConnectionFailed(e.getErrorCode(), e.getSQLState());
         std::cerr << "CharacterRepository::FindById failed: " << e.what() << '\n';
         queryResult.status = CharacterLoadStatus::DatabaseError;
         return queryResult;

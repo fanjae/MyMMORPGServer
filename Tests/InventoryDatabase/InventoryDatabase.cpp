@@ -47,7 +47,11 @@ int main()
         std::cout << "[PASS] DB owner check and transactional first-time inventory creation\n";
 
         auto merged = Apply(repository, 1, 1001, {InventoryOperation::Move, 1, 4, 0, original.revision});
+        Check(repository.LastWriteMetrics().headers == 1 && repository.LastWriteMetrics().slots == 2, "Merge rewrote unchanged DB slots");
         auto used = Apply(repository, 1, 1001, {InventoryOperation::Use, 1, 0, 0, merged.revision});
+        Check(repository.LastWriteMetrics().headers == 1 && repository.LastWriteMetrics().slots == 1, "Potion use rewrote unchanged DB slots");
+        auto sorted = Apply(repository, 1, 1001, {InventoryOperation::Sort, 1, 0, 0, used.revision});
+        Check(sorted.revision == used.revision && repository.LastWriteMetrics().headers == 0 && repository.LastWriteMetrics().slots == 0, "No-op sort wrote to DB");
         auto stale = Apply(repository, 1, 1001, {InventoryOperation::Use, 1, 0, 0, original.revision});
         Check(merged.entries[24].quantity == 15 && merged.entries[28].itemId == 0 && used.hp == 80 && used.entries[24].quantity == 14 &&
             stale.result == InventoryResult::StaleRevision && stale.revision == used.revision, "DB mutations or duplicate request protection failed");
@@ -106,7 +110,28 @@ int main()
                 Apply(repository, 1, 1002).entries[24].quantity == 10, "Canceled queued inventory transaction committed");
         }
         std::cout << "[PASS] DB worker submission stays nonblocking and canceled queued mutations do not commit\n";
-        std::cout << "PASS 6 inventory database integration groups\n"; return 0;
+        // 별도 연결에서 작업 Connection을 끊어도 변경 요청을 재실행하지 않고 다음 조회로 복구한다.
+        uint64_t connectionId = Scalar(connection, "SELECT CONNECTION_ID()");
+        DatabaseConnection killer; Connect(killer);
+        std::string kill = "KILL CONNECTION " + std::to_string(connectionId); Execute(*killer.GetConnection(), kill.c_str());
+        auto lost = Apply(repository, 1, 1002, {InventoryOperation::Use, 1, 0, 0, 1});
+        Check(lost.result == InventoryResult::StorageError, "Disconnected operation reported success");
+        auto recovered = Apply(repository, 1, 1002);
+        Check(recovered.result == InventoryResult::Success && recovered.revision == 1 && recovered.entries[24].quantity == 10,
+            "Reconnect lost stored state or replayed failed consumption");
+        std::cout << "[PASS] Lost DB connection recovers on refresh without replaying a mutation\n";
+        std::cout << "[PASS] Incremental DB writes: merge 2 slots, potion 1 slot, no-op sort 0 rows\n";
+        // 최초 오류가 캐릭터 조회에서 발생해도 같은 작업 큐의 다음 입장 조회가 복구되어야 한다.
+        DatabaseConnection entryDatabase; Connect(entryDatabase);
+        uint64_t entryId = Scalar(*entryDatabase.GetConnection(), "SELECT CONNECTION_ID()");
+        CharacterRepository entryWorker(*entryDatabase.GetConnection());
+        kill = "KILL CONNECTION " + std::to_string(entryId); Execute(*killer.GetConnection(), kill.c_str());
+        auto failedEntry = entryWorker.FindByIdAsync(1, 1001, std::make_shared<std::atomic<bool>>(false)).get();
+        auto recoveredEntry = entryWorker.FindByIdAsync(1, 1001, std::make_shared<std::atomic<bool>>(false)).get();
+        Check(failedEntry.status == CharacterLoadStatus::DatabaseError && recoveredEntry.status == CharacterLoadStatus::Success &&
+            recoveredEntry.character.characterId == 1001, "Shared DB worker did not recover character lookup");
+        std::cout << "[PASS] Character lookup recovers the shared DB connection after an initial disconnect\n";
+        std::cout << "PASS 9 inventory database integration groups\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }
