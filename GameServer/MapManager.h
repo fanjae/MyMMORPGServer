@@ -16,14 +16,16 @@ public:
 
     bool LoadMaps(const std::string& path);
     bool LoadGeometry(const std::string& directory);
-    Map* FindMap(uint32_t mapId) const;
+    Map* FindMap(uint32_t mapId, uint16_t channel = 1) const;
+    static constexpr uint16_t ChannelCount = 3;
+    uint32_t CountChannelPlayers(uint16_t channel) const;
     const MapGeometry* FindGeometry(uint32_t mapId) const;
     void Advance();
     uint32_t GetWaitMilliseconds() const;
     void LogMetrics(size_t sessions, size_t queuedBytes);
 
 private:
-    std::unordered_map<uint32_t, std::unique_ptr<Map>> _maps;
+    std::unordered_map<uint64_t, std::unique_ptr<Map>> _maps;
     std::unordered_map<uint32_t, MapGeometry> _geometries;
     std::unordered_map<uint32_t, World3DDefinition> _worlds3D;
     std::chrono::steady_clock::time_point _nextTick = std::chrono::steady_clock::now() + std::chrono::milliseconds(20);

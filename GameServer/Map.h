@@ -11,6 +11,7 @@
 #include <chrono>
 #include <deque>
 #include <vector>
+#include <map>
 
 class Monster;
 class Player;
@@ -18,7 +19,7 @@ class Player;
 class Map
 {
 public:
-    explicit Map(const MapDefinition& definition);
+    explicit Map(const MapDefinition& definition, uint16_t channel = 1);
     void SetGeometry(const MapGeometry& geometry);
     bool IsPlatformer() const;
     bool SendGeometry(Player& player);
@@ -31,8 +32,13 @@ public:
     bool SendState3D(Player& recipient, const Player& player);
     bool ReceiveActions3D(Player& player, const MovementActionsHeader& header, const MovementAction3D* actions);
     void SpawnFieldMonsters(uint16_t count = 3);
-    bool SendFieldMonsters(Player& recipient);
+    bool SendFieldMonsters(Player& recipient, bool force = true);
     bool AttackField(Player& player, const BasicAttackRequest& request, std::chrono::steady_clock::time_point now);
+    bool SendVitals(Player& player, uint16_t damage = 0, bool resync = false);
+    bool SendFieldDrops(Player& recipient);
+    PickupResult ReserveDrop(Player& player, const PickupRequest& request, InventoryMutation& mutation);
+    void FinishDrop(uint64_t id, uint32_t owner, InventoryResult result);
+    uint16_t GetChannel() const { return _channel; }
     struct FieldMonsterMetrics { uint64_t builds = 0, packets = 0, bytes = 0, failures = 0, simulated = 0; };
     FieldMonsterMetrics TakeFieldMonsterMetrics() { auto result = _monsterMetrics; _monsterMetrics = {}; return result; }
 
@@ -69,10 +75,23 @@ public:
 
 private:
     // 캐릭터별 복제본 없이 Map이 몬스터의 순찰 위치와 정지 시간을 관리한다.
-    struct FieldMonster { uint32_t id; uint8_t kind; double x, y, z, left, right; int direction = 1; double rest = 0; uint16_t hp = 60; uint64_t revision = 1; std::chrono::steady_clock::time_point respawnAt{}; };
+    struct FieldMonster { uint32_t id; uint8_t kind; double x, y, z, left, right; int direction = 1; double rest = 0; uint16_t hp = 60; uint64_t revision = 1; std::chrono::steady_clock::time_point respawnAt{}, attackAt{}; double homeZ = z; uint16_t yaw = 9000; };
+    struct FieldDrop { DropRecord record; uint32_t reservedBy = 0; std::chrono::steady_clock::time_point expires{}, reservationUntil{}; };
+    std::vector<FieldDrop> _fieldDrops;
+    uint64_t _dropRevision = 1;
+    uint16_t _channel = 1;
+    void CreateDrop(const FieldMonster& monster, std::chrono::steady_clock::time_point now);
+    void BroadcastDrops();
     std::vector<FieldMonster> _fieldMonsters;
-    // 같은 tick의 공통 목록을 한 번만 만들고 수신자 입장 번호만 바꿔 전송한다.
-    std::vector<char> _monsterPacket;
+    // 같은 주변 목록은 패킷을 공유하고 수신자별 상태는 작은 해시·시각만 보관한다.
+    std::map<std::vector<uint32_t>, std::vector<std::vector<char>>> _monsterParts;
+    std::vector<FieldMonsterRecord> _monsterRecords;
+    std::vector<uint64_t> _monsterHashes;
+    struct MonsterView { uint64_t hash = 0; bool sent = false; std::chrono::steady_clock::time_point heartbeat{}; };
+    std::unordered_map<uint32_t, MonsterView> _monsterViews;
+    struct DropView { std::vector<uint64_t> ids; uint64_t revision = 0; bool sent = false; };
+    std::unordered_map<uint32_t, DropView> _dropViews;
+    std::chrono::steady_clock::time_point _fieldNow{};
     uint64_t _monsterPacketTick = UINT64_MAX;
     FieldMonsterMetrics _monsterMetrics;
     void TickFieldMonsters(uint64_t tick, std::chrono::steady_clock::time_point now);

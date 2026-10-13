@@ -9,4 +9,6 @@ public:
     static bool Validate(const InventorySnapshotPacket& state);
     static InventorySnapshotPacket Starter();
     static uint16_t StackLimit(uint32_t itemId, uint8_t category);
+    static int EquipmentSlot(uint32_t itemId) { return itemId == 1 ? 0 : itemId == 2 ? 1 : -1; }
+    static InventorySnapshotPacket Mutate(const InventorySnapshotPacket& state, const InventoryMutation& mutation);
 };

@@ -22,6 +22,9 @@ bool Map::SendWorld3D(Player& player)
     Session* session = player.GetSession();
     if (!Is3D() || session == nullptr) return false;
     auto settings = _world3D->settings; settings.generation = player.GetGeneration();
+    // 채널 이동 시 같은 필드의 발 위치를 유지하고 새 입장 번호로 이동 기록을 다시 시작한다.
+    const auto& pose = player.GetState3D();
+    settings.spawnX = static_cast<int32_t>(pose.x / 1000); settings.spawnY = static_cast<int32_t>(pose.y / 1000); settings.spawnZ = static_cast<int32_t>(pose.z / 1000);
     if (!Send3D(*session, GamePacketOpcode::World3D, settings)) return false;
     for (auto box : _world3D->boxes)
     {
@@ -43,6 +46,7 @@ bool Map::SendState3D(Player& recipient, const Player& player)
 bool Map::ReceiveActions3D(Player& player, const MovementActionsHeader& header, const MovementAction3D* actions)
 {
     ++_movementMetrics.receivedPackets;
+    if (player.IsDead() || player.CombatPaused()) return true; // 사망·전투 복구 중 이동은 반영하지 않되 연결은 유지한다.
     _movementMetrics.receivedBytes += sizeof(PacketHeader) + sizeof(header) + header.count * sizeof(MovementAction3D);
     auto reject = [this]() { ++_movementMetrics.rejectedPackets; return false; };
     if (!Is3D() || player.GetMap() != this || header.mapId != GetMapId() || header.count == 0 ||

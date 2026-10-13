@@ -131,7 +131,89 @@ int main()
         Check(failedEntry.status == CharacterLoadStatus::DatabaseError && recoveredEntry.status == CharacterLoadStatus::Success &&
             recoveredEntry.character.characterId == 1001, "Shared DB worker did not recover character lookup");
         std::cout << "[PASS] Character lookup recovers the shared DB connection after an initial disconnect\n";
-        std::cout << "PASS 9 inventory database integration groups\n"; return 0;
+        // 장비의 고유 번호와 착용 위치를 이동·교환·롤백·재조회에서도 유지한다.
+        auto gear=Apply(repository,1,1002); uint64_t swordId=gear.entries[0].instanceId;
+        auto worn=Apply(repository,1,1002,{InventoryOperation::Equip,0,0,0,gear.revision});
+        Check(worn.result==InventoryResult::Success && worn.equipped[0].instanceId==swordId && !worn.entries[0].itemId,"Equip did not move owned instance");
+        auto fullGear=Apply(repository,1,1002,{InventoryOperation::Unequip,0,0,1,worn.revision});
+        Check(fullGear.result==InventoryResult::Full && fullGear.equipped[0].instanceId==swordId,"Unequip overwrote occupied slot");
+        auto removed=Apply(repository,1,1002,{InventoryOperation::Unequip,0,0,0,worn.revision});
+        Check(removed.result==InventoryResult::Success && removed.entries[0].instanceId==swordId && !removed.equipped[0].itemId,"Unequip lost instance");
+        auto swapped=Apply(repository,1,1002,{InventoryOperation::Move,0,0,1,removed.revision});
+        Check(swapped.entries[1].instanceId==swordId,"Equipment swap violated unique instance locations");
+        auto restoredGear=Apply(repository,1,1002,{InventoryOperation::Move,0,0,1,swapped.revision});
+        Execute(connection,"ALTER TABLE character_equipment ADD CONSTRAINT ck_equipment_test_failure CHECK (slot<>0)");
+        auto gearFailure=Apply(repository,1,1002,{InventoryOperation::Equip,0,0,0,restoredGear.revision});
+        Execute(connection,"ALTER TABLE character_equipment DROP CHECK ck_equipment_test_failure");
+        auto stableGear=Apply(repository,1,1002);
+        Check(gearFailure.result==InventoryResult::StorageError && stableGear.revision==restoredGear.revision && stableGear.entries[0].instanceId==swordId,"Equipment failure left a lost slot");
+        std::cout << "[PASS] DB equipment instance identity, empty-slot validation, swap and atomic rollback\n";
+        auto internal=[&](InventoryMutation mutation,uint32_t account=1,uint32_t character=1002)
+        { return repository.Apply(account,character,{},std::make_shared<std::atomic<bool>>(false),std::chrono::steady_clock::now()+std::chrono::seconds(5),mutation); };
+        InventoryMutation damage; damage.damage=10; auto hurt=internal(damage);
+        auto healed=Apply(repository,1,1002,{InventoryOperation::Use,1,0,0,hurt.revision});
+        Check(hurt.hp==40 && healed.hp==70 && healed.entries[24].quantity==9,"Damage and potion order lost HP or quantity");
+        damage.damage=100; auto dead=internal(damage);
+        Check(dead.hp==0 && Apply(repository,1,1002,{InventoryOperation::Use,1,0,0,dead.revision}).result==InventoryResult::CannotUse,"Potion bypassed death");
+        InventoryMutation revive; revive.revive=true; Check(internal(revive).hp==100,"Revive did not persist HP");
+        std::cout << "[PASS] DB serialized damage/potion/death/revive without full slot writes\n";
+        InventoryMutation grant; grant.dropId=700000001; grant.itemId=101; grant.quantity=1;
+        InventorySnapshotPacket claimA,claimB;
+        auto claim=[&](DatabaseConnection& db,uint32_t account,uint32_t character,InventorySnapshotPacket& reply)
+        {
+            auto driver=sql::mysql::get_driver_instance(); driver->threadInit(); InventoryRepository claims(*db.GetConnection());
+            reply=claims.Apply(account,character,{},std::make_shared<std::atomic<bool>>(false),std::chrono::steady_clock::now()+std::chrono::seconds(5),grant); driver->threadEnd();
+        };
+        std::thread firstClaim([&]{claim(concurrentA,1,1002,claimA);}), secondClaim([&]{claim(concurrentB,2,2001,claimB);}); firstClaim.join(); secondClaim.join();
+        Check((claimA.result==InventoryResult::Success && claimB.result==InventoryResult::AlreadyTaken) ||
+            (claimB.result==InventoryResult::Success && claimA.result==InventoryResult::AlreadyTaken),"Concurrent drop granted twice");
+        Check(internal(grant).result==InventoryResult::AlreadyTaken && Scalar(connection,"SELECT COUNT(*) FROM field_drop_claims WHERE drop_id=700000001")==1,"Duplicate drop claim paid twice");
+        std::cout << "[PASS] DB concurrent characters and replay receive one transactional drop grant\n";
+        Execute(connection,"DELETE FROM character_inventory_slots WHERE character_id=1002 AND category=1");
+        for (int i=0;i<24;++i) { auto query="INSERT INTO character_inventory_slots (character_id,category,slot,item_id,quantity) VALUES (1002,1,"+std::to_string(i)+",101,100)"; Execute(connection,query.c_str()); }
+        grant.dropId=700000002; Check(internal(grant).result==InventoryResult::Full && Scalar(connection,"SELECT COUNT(*) FROM field_drop_claims WHERE drop_id=700000002")==0,"Full inventory consumed drop claim");
+        std::cout << "[PASS] DB full inventory preserves unclaimed drop\n";
+        // 커밋 응답을 잃었다고 가정해 같은 피격 번호를 다시 보내도 HP를 두 번 줄이지 않는다.
+        InventoryMutation retryDamage; retryDamage.damage = 10; retryDamage.mutationId = 800000001;
+        auto once = internal(retryDamage), twice = internal(retryDamage);
+        Check(once.hp == twice.hp && once.revision == twice.revision &&
+            Scalar(connection, "SELECT COUNT(*) FROM field_combat_mutations WHERE mutation_id=800000001") == 1, "Damage retry applied twice");
+        retryDamage.damage = 11;
+        Check(internal(retryDamage).result == InventoryResult::StorageError, "Changed retry payload accepted");
+        retryDamage.damage = 10; retryDamage.mutationId = 800000002;
+        Execute(connection, "ALTER TABLE character_inventories ADD CONSTRAINT ck_damage_retry_failure CHECK (character_id<>1002 OR hp=90)");
+        Check(internal(retryDamage).result == InventoryResult::StorageError &&
+            Scalar(connection, "SELECT COUNT(*) FROM field_combat_mutations WHERE mutation_id=800000002") == 0, "Failed damage retained its dedupe record");
+        Execute(connection, "ALTER TABLE character_inventories DROP CHECK ck_damage_retry_failure");
+        auto recoveredDamage = internal(retryDamage);
+        Check(recoveredDamage.hp == 80 && internal(retryDamage).hp == 80, "Rolled back damage could not recover exactly once");
+        std::cout << "[PASS] DB damage retry deduplicates committed results and atomically rolls back/retries rejected changes\n";
+        InventoryMutation lookup; lookup.dropId = 700000001; lookup.queryDrop = true;
+        auto claimOwner = Scalar(connection, "SELECT character_id FROM field_drop_claims WHERE drop_id=700000001");
+        auto queriedOwner = internal(lookup, claimOwner == 1002 ? 1 : 2, uint32_t(claimOwner));
+        auto queriedOther = internal(lookup, claimOwner == 1002 ? 2 : 1, claimOwner == 1002 ? 2001 : 1002);
+        lookup.dropId = 799999999; auto missingClaim = internal(lookup);
+        Check(queriedOwner.result == InventoryResult::Success && queriedOther.result == InventoryResult::AlreadyTaken &&
+            missingClaim.result == InventoryResult::InvalidSlot && Scalar(connection, "SELECT COUNT(*) FROM field_drop_claims WHERE drop_id=700000001") == 1,
+            "Pickup result lookup changed grants or misidentified owner");
+        Check(internal(retryDamage).revision == recoveredDamage.revision, "Result lookup mutated inventory revision");
+        std::cout << "[PASS] DB pickup result queries distinguish owner/other/no record without awarding or consuming items\n";
+        Execute(connection, "INSERT INTO field_drop_claims (drop_id,character_id,item_id,quantity,acquired_at) VALUES (799999998,1002,101,1,NOW()-INTERVAL 31 DAY)");
+        Execute(connection, "INSERT INTO field_combat_mutations (mutation_id,character_id,damage,applied_at) VALUES (899999999,1002,1,NOW()-INTERVAL 31 DAY)");
+        InventoryRepository cleanup(connection); Apply(cleanup, 1, 1002);
+        Check(Scalar(connection, "SELECT COUNT(*) FROM field_drop_claims WHERE drop_id=799999998") == 0 &&
+            Scalar(connection, "SELECT COUNT(*) FROM field_combat_mutations WHERE mutation_id=899999999") == 0 &&
+            Scalar(connection, "SELECT COUNT(*) FROM field_combat_mutations WHERE mutation_id=800000001") == 1,
+            "Record cleanup deleted active dedupe records or retained expired ones");
+        std::cout << "[PASS] DB record cleanup removes expired history and retains recent claims/damage\n";
+        // 뒤의 실제 실행 파일 검사가 같은 최초 상태를 사용할 수 있도록 이번 검사 캐릭터만 복원한다.
+        Execute(connection,"DELETE FROM character_inventory_slots WHERE character_id IN (1002,2001) AND category=1");
+        for (uint32_t character : {1002u,2001u})
+        {
+            auto rows="INSERT INTO character_inventory_slots (character_id,category,slot,item_id,quantity) VALUES ("+std::to_string(character)+",1,0,101,10),("+std::to_string(character)+",1,1,102,8),("+std::to_string(character)+",1,4,101,5)"; Execute(connection,rows.c_str());
+        }
+        Execute(connection,"UPDATE character_inventories SET revision=1,hp=50,mp=25 WHERE character_id IN (1002,2001)");
+        std::cout << "PASS 16 inventory database integration groups\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

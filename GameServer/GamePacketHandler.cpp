@@ -18,6 +18,82 @@
 namespace
 {
     constexpr uint32_t START_MAP_ID = 100000000;
+    template<typename T> bool SendFieldPacket(GameSession& session, GamePacketOpcode opcode, const T& payload)
+    {
+        PacketHeader header{uint16_t(sizeof(PacketHeader)+sizeof(T)),uint16_t(opcode)};
+        char bytes[sizeof(header)+sizeof(T)]; memcpy(bytes,&header,sizeof(header)); memcpy(bytes+sizeof(header),&payload,sizeof(payload));
+        return session.Send(bytes,sizeof(bytes));
+    }
+}
+
+bool GamePacketHandler::SendChannels(GameSession& session, ChannelResult result)
+{
+    auto* player=session.GetPlayer(); if (!player || !player->GetMap()) return false;
+    ChannelHeader payload{player->GetMap()->GetChannel(),MapManager::ChannelCount,result};
+    PacketHeader header{uint16_t(sizeof(PacketHeader)+sizeof(payload)+sizeof(ChannelRecord)*MapManager::ChannelCount),uint16_t(GamePacketOpcode::ChannelState)};
+    char bytes[sizeof(header)+sizeof(payload)+sizeof(ChannelRecord)*MapManager::ChannelCount];
+    memcpy(bytes,&header,sizeof(header)); memcpy(bytes+sizeof(header),&payload,sizeof(payload));
+    for (uint16_t i=0;i<MapManager::ChannelCount;++i)
+    {
+        ChannelRecord record{uint16_t(i+1),session.GetMapManager().CountChannelPlayers(uint16_t(i+1))};
+        memcpy(bytes+sizeof(header)+sizeof(payload)+i*sizeof(record),&record,sizeof(record));
+    }
+    return session.Send(bytes,sizeof(bytes));
+}
+bool GamePacketHandler::SendPickupResult(GameSession& session, uint64_t dropId, PickupResult result)
+{
+    return SendFieldPacket(session,GamePacketOpcode::PickupResponse3D,PickupResponse{dropId,result});
+}
+bool GamePacketHandler::HandleFieldRequest(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
+{
+    auto* player=session.GetPlayer();
+    if (!session.IsAuthenticated() || session.GetProtocolVersion()!=GAME3D_PROTOCOL_VERSION || !player || !player->GetMap()) return false;
+    auto operation=static_cast<GamePacketOpcode>(opcode); auto now=std::chrono::steady_clock::now();
+    if (operation == GamePacketOpcode::PickupStatusRequest3D)
+    {
+        if (payloadSize != sizeof(uint64_t)) return false;
+        InventoryMutation mutation; memcpy(&mutation.dropId, payload, sizeof(mutation.dropId));
+        if (!mutation.dropId) return false;
+        mutation.queryDrop = true;
+        // 결과 조회는 지급을 재실행하지 않고 연결당 한 DB 작업만 허용한다.
+        if (!session.QueueFieldMutation(mutation)) return SendPickupResult(session, mutation.dropId, PickupResult::Busy);
+        return true;
+    }
+    if (operation==GamePacketOpcode::ChannelListRequest)
+        return payloadSize==0 && SendChannels(session,ChannelResult::Success);
+    if (operation==GamePacketOpcode::ReviveRequest)
+    {
+        if (payloadSize!=0) return false;
+        InventoryMutation mutation; mutation.revive=true;
+        if (!player->CanRevive(now) || !session.QueueFieldMutation(mutation))
+            return SendInventorySnapshot(session,session.InventoryError(InventoryResult::CannotUse));
+        return true;
+    }
+    if (operation==GamePacketOpcode::PickupRequest3D)
+    {
+        if (payloadSize!=sizeof(PickupRequest)) return false;
+        PickupRequest request; memcpy(&request,payload,sizeof(request));
+        if (!session.AcceptPickup(request.sequence) || session.FieldBusy()) return SendPickupResult(session,request.dropId,PickupResult::Busy);
+        InventoryMutation mutation; auto result=player->GetMap()->ReserveDrop(*player,request,mutation);
+        if (result!=PickupResult::Success) return SendPickupResult(session,request.dropId,result);
+        if (!session.QueueFieldMutation(mutation,player->GetMap()))
+        { player->GetMap()->FinishDrop(request.dropId,player->GetCharacterId(),InventoryResult::StorageError); return SendPickupResult(session,request.dropId,PickupResult::Busy); }
+        return true;
+    }
+    if (payloadSize!=sizeof(uint16_t)) return false;
+    uint16_t channel; memcpy(&channel,payload,sizeof(channel));
+    Map* oldMap=player->GetMap(); Map* target=session.GetMapManager().FindMap(oldMap->GetMapId(),channel);
+    if (!target || !target->Is3D()) return SendChannels(session,ChannelResult::InvalidChannel);
+    if (target==oldMap) return SendChannels(session,ChannelResult::Success);
+    if (session.FieldBusy()) return SendChannels(session,ChannelResult::Busy);
+    auto result=player->BeginChannelChange(now); if (result!=ChannelResult::Success) return SendChannels(session,result);
+    auto pose=player->GetState3D();
+    oldMap->NotifyPlayerLeaving(*player); oldMap->RemovePlayer(*player);
+    if (!target->AddPlayer(*player)) { oldMap->AddPlayer(*player); oldMap->NotifyPlayerEntered(*player); return SendChannels(session,ChannelResult::Busy); }
+    // 같은 지형의 지상 위치만 유지하고 이전 채널의 행동·점프·송신 대기 목록은 재사용하지 않는다.
+    pose.sequence=pose.clientTick=pose.jumpId=0; pose.velocityX=pose.velocityY=pose.velocityZ=0; pose.inputX=pose.inputZ=0;
+    pose.kind=MovementActionKind::Checkpoint; player->SetState3D(pose); player->SetPosition(int32_t(pose.x/1000),int32_t(pose.y/1000));
+    return SendChannels(session,ChannelResult::Success) && target->SendMapInfo(*player) && target->SendGeometry(*player) && target->NotifyPlayerEntered(*player);
 }
 
 bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize)
@@ -48,6 +124,12 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
         return HandleAttack(session, payload, payloadSize);
     case GamePacketOpcode::InventoryRequest:
         return HandleInventory(session, payload, payloadSize);
+    case GamePacketOpcode::ChannelListRequest:
+    case GamePacketOpcode::ChangeChannelRequest:
+    case GamePacketOpcode::ReviveRequest:
+    case GamePacketOpcode::PickupRequest3D:
+    case GamePacketOpcode::PickupStatusRequest3D:
+        return HandleFieldRequest(session, opcode, payload, payloadSize);
 
     default:
         return false;
@@ -153,7 +235,8 @@ bool GamePacketHandler::CompleteEnterGame(GameSession& session, const AuthTicket
     {
         Player& player = *session.GetPlayer();
         Map& map = *player.GetMap();
-        return map.SendMapInfo(player) && map.SendGeometry(player) && map.NotifyPlayerEntered(player);
+        return map.SendMapInfo(player) && map.SendGeometry(player) && map.NotifyPlayerEntered(player) &&
+            (session.GetProtocolVersion()!=GAME3D_PROTOCOL_VERSION || SendChannels(session,ChannelResult::Success));
     }
     return true;
 }
@@ -172,7 +255,8 @@ bool GamePacketHandler::HandleInventory(GameSession& session, const char* payloa
     if (!session.IsAuthenticated() || session.GetProtocolVersion() != GAME3D_PROTOCOL_VERSION ||
         session.GetPlayer() == nullptr || payloadSize != sizeof(InventoryRequestPacket)) return false;
     InventoryRequestPacket request; memcpy(&request, payload, sizeof(request));
-    if (!session.BeginInventoryRequest(request)) return SendInventorySnapshot(session, session.InventoryError(InventoryResult::RateLimited));
+    if (request.operation > InventoryOperation::Unequip) return false;
+    if (!session.BeginInventoryRequest(request)) { auto error=session.InventoryError(InventoryResult::RateLimited); error.requestId=request.requestId; return SendInventorySnapshot(session,error); }
     return true;
 }
 
@@ -241,7 +325,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
 
     ChangeMapResponse response;
     Map* oldMap = player->GetMap();
-    Map* newMap = session.GetMapManager().FindMap(request.mapId);
+    Map* newMap = session.GetMapManager().FindMap(request.mapId, oldMap->GetChannel());
     response.mapId = oldMap->GetMapId();
     response.x = player->GetX();
     response.y = player->GetY();
@@ -249,6 +333,10 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     if (newMap == nullptr || newMap->Is3D() != (session.GetProtocolVersion() == GAME3D_PROTOCOL_VERSION))
     {
         response.result = ChangeMapResult::MapNotFound;
+    }
+    else if (player->IsDead() || player->CombatPaused())
+    {
+        response.result=ChangeMapResult::MapEnterFailed;
     }
     else if (newMap == oldMap)
     {

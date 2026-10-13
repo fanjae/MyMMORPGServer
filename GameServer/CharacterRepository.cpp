@@ -46,12 +46,12 @@ std::future<CharacterLoadResult> CharacterRepository::FindByIdAsync(uint32_t acc
 }
 
 std::future<InventorySnapshotPacket> CharacterRepository::ApplyInventoryAsync(uint32_t accountId, uint32_t characterId,
-    InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled)
+    InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled, InventoryMutation mutation)
 {
     // DB 잠금 대기는 작업 스레드에 맡기고 호출자는 완료 여부만 확인한다.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    std::packaged_task<InventorySnapshotPacket()> job([this, accountId, characterId, request, canceled, deadline]
-    { return _inventory->Apply(accountId, characterId, request, canceled, deadline); });
+    std::packaged_task<InventorySnapshotPacket()> job([this, accountId, characterId, request, canceled, deadline, mutation]
+    { return _inventory->Apply(accountId, characterId, request, canceled, deadline, mutation); });
     auto result = job.get_future();
     {
         std::lock_guard<std::mutex> lock(_mutex);

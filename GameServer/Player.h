@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <functional>
 
 class Session;
 class Map;
@@ -40,8 +41,28 @@ public:
     uint64_t GetGeneration() const { return _generation; }
     uint64_t GetActionSequence() const { return _acceptedActionSequence; }
     uint64_t GetJumpId() const { return _jumpId; }
-    void SetVitals(const InventorySnapshotPacket& state) { _hp = state.hp; _vitalsReady = true; }
-    bool CanAttack() const { return _vitalsReady && _hp > 0; }
+    void SetVitals(const InventorySnapshotPacket& state)
+    {
+        if ((!_vitalsReady || _hp) && !state.hp) _reviveAt = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        _hp = state.hp; _vitals = state; _vitalsReady = true;
+    }
+    const InventorySnapshotPacket& GetVitals() const { return _vitals; }
+    bool IsDead() const { return _vitalsReady && !_hp; }
+    void InvalidateVitals() { _vitalsReady = false; }
+    bool CombatPaused() const { return _combatPaused; }
+    void PauseCombat(bool paused) { _combatPaused = paused; }
+    uint16_t AttackDamage() const { return _vitals.equipped[0].itemId ? 25 : 20; }
+    uint16_t IncomingDamage() const { return _vitals.equipped[1].itemId ? 8 : 10; }
+    void SetDamageHandler(std::function<bool(uint16_t)> handler) { _damageHandler = std::move(handler); }
+    bool RequestDamage(uint16_t damage) { return CanAttack() && _damageHandler && _damageHandler(damage); }
+    bool CanRevive(std::chrono::steady_clock::time_point now) const { return IsDead() && now >= _reviveAt; }
+    ChannelResult BeginChannelChange(std::chrono::steady_clock::time_point now)
+    {
+        if (!CanAttack() || !_state3D.grounded) return ChannelResult::Unavailable;
+        if (now < _nextChannel) return ChannelResult::Cooldown;
+        _nextChannel = now + std::chrono::seconds(5); return ChannelResult::Success;
+    }
+    bool CanAttack() const { return !_combatPaused && _vitalsReady && _hp > 0; }
     BasicAttackResult BeginAttack(uint64_t sequence, std::chrono::steady_clock::time_point now)
     {
         if (!sequence || sequence <= _lastAttack) return BasicAttackResult::InvalidState;
@@ -61,6 +82,10 @@ private:
     // 공격 순서와 대기 시간은 Map 이동으로 초기화하지 않는다.
     uint64_t _lastAttack = 0; uint16_t _hp = 0; bool _vitalsReady = false;
     std::chrono::steady_clock::time_point _nextAttack{};
+    std::chrono::steady_clock::time_point _nextChannel{}, _reviveAt{};
+    InventorySnapshotPacket _vitals;
+    bool _combatPaused = false;
+    std::function<bool(uint16_t)> _damageHandler;
     uint32_t _characterId = 0;
     uint32_t _accountId = 0;
     std::string _name;

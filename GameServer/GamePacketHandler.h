@@ -6,6 +6,8 @@ class GameSession;
 struct AuthTicket;
 struct CharacterLoadResult;
 struct InventorySnapshotPacket;
+enum class ChannelResult : uint8_t;
+enum class PickupResult : uint8_t;
 
 class GamePacketHandler
 {
@@ -14,6 +16,8 @@ public:
     static bool CompleteEnterGame(GameSession& session, const AuthTicket& ticket, CharacterLoadResult result);
     // 비동기 DB 완료 결과와 요청 제한 오류에 같은 응답 형식을 사용한다.
     static bool SendInventorySnapshot(GameSession& session, const InventorySnapshotPacket& snapshot);
+    static bool SendChannels(GameSession& session, ChannelResult result);
+    static bool SendPickupResult(GameSession& session, uint64_t dropId, PickupResult result);
 
 private:
     static bool HandleEnterGame(GameSession& session, const char* payload, uint16_t payloadSize);
@@ -25,4 +29,5 @@ private:
     static bool HandleMovementActions3D(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleAttack(GameSession& session, const char* payload, uint16_t payloadSize);
     static bool HandleInventory(GameSession& session, const char* payload, uint16_t payloadSize);
+    static bool HandleFieldRequest(GameSession& session, uint16_t opcode, const char* payload, uint16_t payloadSize);
 };

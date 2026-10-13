@@ -4,6 +4,9 @@ param(
     [ValidateRange(1, 65535)][int]$DatabasePort = 3307,
     [ValidateRange(10, 300)][int]$PlayerTimeoutSeconds = 60,
     [switch]$ManualInput,
+    [switch]$ManualCombat,
+    [switch]$FieldExpansion,
+    [switch]$FieldRecovery,
     [ValidateRange(30, 1800)][int]$ManualTimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
@@ -98,7 +101,31 @@ try
     & $inventoryExe *> (Join-Path $output 'inventory-database.log')
     if ($LASTEXITCODE -ne 0) { throw "Inventory DB transaction checks failed. Inspect $output/inventory-database.log" }
     Get-Content -LiteralPath (Join-Path $output 'inventory-database.log')
-    $game = Start-TestServer $gameExe @(('"' + (Join-Path $serverRoot 'data/maps.csv') + '"')) 'game'
+    # 이미 인벤토리·장비가 저장된 DB에 같은 확장 SQL을 재적용해 변경 없이 실행 가능한지 확인한다.
+    docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test < /docker-entrypoint-initdb.d/003_field_combat.sql && MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test < /docker-entrypoint-initdb.d/004_field_recovery.sql' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Existing schema migration reapplication failed.' }
+    Write-Output '[PASS] Equipment/recovery migrations reapply successfully to the populated temporary database'
+    $testMaps=Join-Path $serverRoot 'data/maps.csv'
+    if ($ManualCombat -or $FieldExpansion -or $FieldRecovery)
+    {
+        if ($ManualCombat -and -not $ManualInput) { throw 'ManualCombat requires ManualInput.' }
+        # 검증용 복사본에서만 몬스터 앞에 배치하고 충분한 HP를 주어 실제 키 조작 시간을 확보한다.
+        $fieldData=Join-Path $output 'field-data'; [IO.Directory]::CreateDirectory($fieldData) | Out-Null
+        Get-ChildItem -LiteralPath (Join-Path $serverRoot 'data') -File | Copy-Item -Destination $fieldData
+        $testMaps=Join-Path $fieldData 'maps.csv'
+        $rows=Import-Csv -LiteralPath $testMaps
+        foreach ($row in $rows) { if ($row.mapId -in @('100000002','100000003')) { $row.spawnX='-160'; $row.spawnY='0' } }
+        [IO.File]::WriteAllLines($testMaps,@('mapId,spawnX,spawnY,minX,maxX,minY,maxY,moveSpeed,moveBurst')+@($rows | ForEach-Object { "$($_.mapId),$($_.spawnX),$($_.spawnY),$($_.minX),$($_.maxX),$($_.minY),$($_.maxY),$($_.moveSpeed),$($_.moveBurst)" }))
+        $worldPath=Join-Path $fieldData 'worlds3d.csv'; $worlds=Import-Csv -LiteralPath $worldPath
+        foreach ($row in $worlds) { $row.spawnZ='-130' }
+        [IO.File]::WriteAllLines($worldPath,@('mapId,version,minZ,maxZ,spawnZ,radius,height,speed,jumpSpeed,gravity,maxFallSpeed')+@($worlds | ForEach-Object { "$($_.mapId),$($_.version),$($_.minZ),$($_.maxZ),$($_.spawnZ),$($_.radius),$($_.height),$($_.speed),$($_.jumpSpeed),$($_.gravity),$($_.maxFallSpeed)" }))
+        if ($ManualCombat)
+        {
+            docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test -e "UPDATE character_inventories SET hp=5000,max_hp=5000 WHERE character_id IN (1002,2001)"' | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Manual combat fixture setup failed.' }
+        }
+    }
+    $game = Start-TestServer $gameExe @(('"' + $(if ($FieldExpansion -or $FieldRecovery) { Join-Path $serverRoot 'data/maps.csv' } else { $testMaps }) + '"')) 'game'
     $login = Start-TestServer $loginExe @() 'login'
     $ready = $false; $deadline = [DateTime]::UtcNow.AddSeconds(15)
     while ([DateTime]::UtcNow -lt $deadline)
@@ -154,9 +181,9 @@ try
         $resultFile = Join-Path $output "player-$character/Logs/3d-smoke-full-$character.result"
         if ($players[$index].ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultFile)) { throw "Unity Player $character failed. Inspect $output" }
         $result = [IO.File]::ReadAllText($resultFile)
-        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=9' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
+        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=11' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
         { throw "Full authentication path was not verified for $character. Inspect $output" }
-        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v9 entry, peer jump/land, inventory, shared moving monsters, rendering"
+        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v11 entry, peer jump/land, inventory, shared moving monsters, rendering"
         Write-Output $result
     }
     # 실행 파일의 인벤토리가 DB에 저장되었는지와 파일 저장 경로를 사용하지 않았는지 확인한다.
@@ -170,6 +197,8 @@ try
     dotnet run --project $project -- --field-server mutate 2>&1 | Tee-Object -FilePath (Join-Path $output 'field-mutations.log')
     if ($LASTEXITCODE -ne 0) { throw 'Actual server inventory mutation checks failed.' }
     foreach ($server in @($game, $login)) { Stop-Process -Id $server.Id; $server.WaitForExit(5000) | Out-Null }
+    $beforeRestartVitals=docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -Nse "SELECT character_id,revision,hp,max_hp,mp,max_mp FROM mymmorpg_full_test.character_inventories ORDER BY character_id"'
+    if ($LASTEXITCODE -ne 0) { throw 'Stored vitals baseline could not be read.' }
     $game = Start-TestServer $gameExe @(('"' + (Join-Path $serverRoot 'data/maps.csv') + '"')) 'game-restarted'
     $login = Start-TestServer $loginExe @() 'login-restarted'
     $deadline = [DateTime]::UtcNow.AddSeconds(15); $ready = $false
@@ -188,8 +217,43 @@ try
         Start-Sleep -Milliseconds 100
     }
     if (-not $ready) { throw 'Restarted LoginServer registration timed out.' }
+    $afterRestartVitals=docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -Nse "SELECT character_id,revision,hp,max_hp,mp,max_mp FROM mymmorpg_full_test.character_inventories ORDER BY character_id"'
+    if ($LASTEXITCODE -ne 0 -or ($beforeRestartVitals -join "`n") -ne ($afterRestartVitals -join "`n")) { throw 'Committed HP/MP or revision changed across restart.' }
+    Write-Output '[PASS] Exact committed HP/MP/revision matches before and after server restart, including combat damage'
     dotnet run --no-build --project $project -- --field-server verify 2>&1 | Tee-Object -FilePath (Join-Path $output 'field-restart.log')
     if ($LASTEXITCODE -ne 0) { throw 'Server restart persistence or reentry checks failed.' }
+    if ($FieldExpansion)
+    {
+        foreach ($server in @($game,$login)) { Stop-Process -Id $server.Id; $server.WaitForExit(5000) | Out-Null }
+        $game=Start-TestServer $gameExe @(('"'+$testMaps+'"')) 'game-combat'
+        $login=Start-TestServer $loginExe @() 'login-combat'; Start-Sleep -Seconds 2
+        docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test -e "UPDATE character_inventories SET hp=1000,max_hp=1000,revision=revision+1 WHERE character_id IN (1002,2001)"' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Combat fixture reset failed.' }
+        dotnet run --no-build --project $project -- --field-expansion 2>&1 | Tee-Object -FilePath (Join-Path $output 'field-expansion.log')
+        if ($LASTEXITCODE -ne 0) { throw 'Actual channel/combat/drop checks failed.' }
+        docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test -e "UPDATE character_inventories SET hp=1,revision=revision+1 WHERE character_id=1002"' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Death fixture reset failed.' }
+        Start-Sleep -Milliseconds 300
+        dotnet run --no-build --project $project -- --field-expansion death 2>&1 | Tee-Object -FilePath (Join-Path $output 'field-death.log')
+        if ($LASTEXITCODE -ne 0) { throw 'Actual death/revive checks failed.' }
+    }
+    if ($FieldRecovery)
+    {
+        foreach ($server in @($game,$login)) { Stop-Process -Id $server.Id; $server.WaitForExit(5000) | Out-Null }
+        $game = Start-TestServer $gameExe @(('"' + $testMaps + '"')) 'game-recovery'
+        $login = Start-TestServer $loginExe @() 'login-recovery'; Start-Sleep -Seconds 2
+        docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test -e "UPDATE character_inventories SET hp=1000,max_hp=1000,revision=revision+1 WHERE character_id=1002; ALTER TABLE character_inventories ADD CONSTRAINT ck_field_recovery_failure CHECK (character_id<>1002 OR hp=1000)"' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Recovery failure fixture setup failed.' }
+        $marker = Join-Path $output 'combat-paused'
+        $recovery = Start-TestServer 'dotnet' @('run','--no-build','--project',('"' + $project + '"'),'--','--field-recovery',('"' + $marker + '"')) 'field-recovery'
+        $limit = [DateTime]::UtcNow.AddSeconds(25)
+        while (-not (Test-Path -LiteralPath $marker) -and [DateTime]::UtcNow -lt $limit -and -not $recovery.HasExited) { Start-Sleep -Milliseconds 200 }
+        if (-not (Test-Path -LiteralPath $marker)) { throw 'Combat did not pause after forced DB failure.' }
+        docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot mymmorpg_full_test -e "ALTER TABLE character_inventories DROP CHECK ck_field_recovery_failure"' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Recovery failure fixture cleanup failed.' }
+        if (-not $recovery.WaitForExit(20000) -or $recovery.ExitCode -ne 0) { throw 'Combat recovery failed.' }
+        Get-Content -LiteralPath (Join-Path $output 'field-recovery.out')
+    }
     $passed = $true
 }
 finally

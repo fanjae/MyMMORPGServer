@@ -20,6 +20,12 @@ namespace
         bool Send(const char* data, int32_t size) override { if (fail) return false; packets.emplace_back(data, data + size); return true; }
         bool OnPacket(uint16_t, const char*, uint16_t) override { return true; }
     };
+    const std::vector<char>& Last(Capture& session,GamePacketOpcode opcode)
+    {
+        for (auto it=session.packets.rbegin();it!=session.packets.rend();++it)
+            if (reinterpret_cast<const PacketHeader*>(it->data())->opcode==static_cast<uint16_t>(opcode)) return *it;
+        throw std::runtime_error("Expected field packet missing");
+    }
 }
 void RunFieldFeatureTests()
 {
@@ -61,17 +67,17 @@ void RunFieldFeatureTests()
     pa.SetSession(&a); pb.SetSession(&b); pc.SetSession(&other); Check(map.AddPlayer(pa) && map.AddPlayer(pb), "Field entry failed");
     Map otherMap({100000003, 0, 0, -400, 400, -200, 400, 80, 12}); otherMap.SetWorld3D(world); otherMap.AddPlayer(pc);
     Check(map.SendFieldMonsters(pa), "Initial monster snapshot missing");
-    FieldMonsterRecord initial; memcpy(&initial, a.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonstersHeader), sizeof(initial));
+    FieldMonsterRecord initial; memcpy(&initial, a.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonsterPartsHeader), sizeof(initial));
     a.packets.clear(); auto now = std::chrono::steady_clock::now();
     for (uint64_t tick = 1; tick <= 60; ++tick) map.Tick(tick, now + std::chrono::milliseconds(tick * 20));
-    Check(a.packets.size() == b.packets.size() && a.packets.size() <= 6 && other.packets.empty(), "Monster broadcast cadence or map isolation failed");
+    Check(a.packets.size() == b.packets.size() && a.packets.size() <= 7 && other.packets.empty(), "Monster broadcast cadence or map isolation failed");
     Check(a.packets.back() == b.packets.back(), "Two field occupants received different authoritative monster states");
-    FieldMonsterRecord moved; memcpy(&moved, a.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonstersHeader), sizeof(moved));
+    FieldMonsterRecord moved; memcpy(&moved, a.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonsterPartsHeader), sizeof(moved));
     Check(moved.monsterId == initial.monsterId && moved.x > initial.x && moved.y == initial.y, "Monster did not patrol on the floor");
     map.RemovePlayer(pb); size_t previous = b.packets.size(); map.Tick(70, now + std::chrono::milliseconds(1400));
     Check(b.packets.size() == previous, "Departed player received field monsters");
     Check(map.AddPlayer(pb) && map.SendFieldMonsters(pb), "Reentered player missing current field state");
-    FieldMonstersHeader header; memcpy(&header, b.packets.back().data() + sizeof(PacketHeader), sizeof(header));
+    FieldMonsterPartsHeader header; memcpy(&header, b.packets.back().data() + sizeof(PacketHeader), sizeof(header));
     Check(header.generation == pb.GetGeneration() && header.count == 3, "Reentry monster generation/count wrong");
     b.fail = true; map.Tick(90, now + std::chrono::milliseconds(1800)); Check(b.IsCloseRequested() && !a.IsCloseRequested(), "Monster send failure affected healthy peer");
     std::cout << "[PASS] Shared monster patrol, bounded broadcasts, map isolation, reentry and send failure isolation\n";
@@ -88,10 +94,10 @@ void RunFieldFeatureTests()
         auto send = [&](uint64_t sequence, int milliseconds)
         {
             attackRequest.sequence = sequence; Check(arena.AttackField(hero, attackRequest, now + std::chrono::milliseconds(milliseconds)), "Attack send failed");
-            BasicAttackEvent event; memcpy(&event, attacker.packets.back().data() + sizeof(PacketHeader), sizeof(event)); return event;
+            BasicAttackEvent event; memcpy(&event, Last(attacker,GamePacketOpcode::BasicAttackEvent3D).data() + sizeof(PacketHeader), sizeof(event)); return event;
         };
         auto hit = send(1, 0); Check(hit.result == BasicAttackResult::Hit && hit.hp == 40 && hit.damage == 20 &&
-            observer.packets.back() == attacker.packets.back(), "Hit not shared or damage wrong");
+            Last(observer,GamePacketOpcode::BasicAttackEvent3D) == Last(attacker,GamePacketOpcode::BasicAttackEvent3D), "Hit not shared or damage wrong");
         auto duplicateAttack = send(1, 600); Check(duplicateAttack.result == BasicAttackResult::InvalidState, "Duplicate attack applied");
         auto cooldown = send(2, 100); Check(cooldown.result == BasicAttackResult::Cooldown, "Attack cooldown bypassed");
         attackRequest.generation = hero.GetGeneration() + 1; Check(send(3, 600).result == BasicAttackResult::InvalidState, "Old map attack accepted"); attackRequest.generation = hero.GetGeneration();
@@ -100,20 +106,73 @@ void RunFieldFeatureTests()
         state.z = -130000; hero.SetState3D(state); Check(send(5, 1800).hp == 20 && send(6, 2400).result == BasicAttackResult::Killed, "Monster death missing");
         Check(send(7, 3000).result == BasicAttackResult::Miss, "Dead monster attacked");
         arena.Tick(400, now + std::chrono::seconds(8)); arena.SendFieldMonsters(hero);
-        FieldMonsterRecord respawn; memcpy(&respawn, attacker.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonstersHeader), sizeof(respawn));
+        FieldMonsterRecord respawn; memcpy(&respawn, attacker.packets.back().data() + sizeof(PacketHeader) + sizeof(FieldMonsterPartsHeader), sizeof(respawn));
         Check(respawn.hp == 60 && respawn.revision == 5, "Monster respawn reset revision or HP incorrectly");
         World3DDefinition blocked = world; blocked.boxes.push_back({100000002, 0, 2, -180, 0, -120, -140, 60, -115});
         Map wall({100000002, 0, 0, -400, 400, -200, 400, 80, 12}); wall.SetWorld3D(blocked); wall.SpawnFieldMonsters(1); arena.RemovePlayer(hero); wall.AddPlayer(hero); hero.SetState3D(state);
         attackRequest.mapId = wall.GetMapId(); attackRequest.generation = hero.GetGeneration(); attackRequest.sequence = 8;
         wall.AttackField(hero, attackRequest, now + std::chrono::seconds(9));
-        BasicAttackEvent missed; memcpy(&missed, attacker.packets.back().data() + sizeof(PacketHeader), sizeof(missed)); Check(missed.result == BasicAttackResult::Miss, "Attack crossed a wall");
+        BasicAttackEvent missed; memcpy(&missed, Last(attacker,GamePacketOpcode::BasicAttackEvent3D).data() + sizeof(PacketHeader), sizeof(missed)); Check(missed.result == BasicAttackResult::Miss, "Attack crossed a wall");
         auto dead = InventoryService::Starter(); dead.hp = 0; hero.SetVitals(dead); attackRequest.sequence = 9;
         wall.AttackField(hero, attackRequest, now + std::chrono::seconds(10)); memcpy(&missed, attacker.packets.back().data() + sizeof(PacketHeader), sizeof(missed));
         Check(missed.result == BasicAttackResult::Unavailable, "Zero-HP character attacked");
         std::cout << "[PASS] Basic attack damage, shared results, cooldown, duplicate/map/range/facing/wall guards, death and respawn\n";
     }
 
-    // 수신자가 늘어도 공통 패킷 구성 횟수는 방송 주기 수와 같아야 한다.
+    // 장비와 전투는 입력 상태 대신 확정한 인벤토리·필드 상태에서 판정한다.
+    {
+        auto starter=InventoryService::Starter();
+        auto equipped=InventoryService::Apply(starter,{InventoryOperation::Equip,0,0,0,starter.revision});
+        Check(equipped.equipped[0].instanceId==starter.entries[0].instanceId && !equipped.entries[0].itemId,"Equipment identity lost");
+        auto forged=equipped; forged.entries[4]=equipped.equipped[0]; Check(!InventoryService::Validate(forged),"Duplicate instance accepted");
+        InventoryMutation damage; damage.damage=10; auto hurt=InventoryService::Mutate(starter,damage);
+        Check(hurt.hp==40 && hurt.entries[24].quantity==10,"Damage changed slots");
+        Map arena({100000002,0,0,-400,400,-200,400,80,12},2); arena.SetWorld3D(world); arena.SpawnFieldMonsters(1);
+        Capture capture; Player victim(9001,9,"victim",1); victim.SetSession(&capture); arena.AddPlayer(victim); victim.SetVitals(starter);
+        auto pose=victim.GetState3D(); pose.x=-160000; pose.z=-100000; victim.SetState3D(pose); int attacks=0;
+        victim.SetDamageHandler([&](uint16_t amount){Check(amount==10,"Monster damage incorrect"); ++attacks; return true;});
+        arena.Tick(1,now); arena.Tick(2,now+std::chrono::milliseconds(100)); arena.Tick(80,now+std::chrono::milliseconds(1600));
+        Check(attacks==2,"Monster attack interval bypassed");
+        auto dead=starter; dead.hp=0; victim.SetVitals(dead); arena.Tick(170,now+std::chrono::seconds(4)); Check(attacks==2,"Dead player attacked");
+        Check(victim.GetMap()->GetChannel()==2 && sizeof(VitalsPacket)==35,"Channel or compact vitals invalid");
+        std::cout << "[PASS] Equipment identity, duplicate rejection, monster detection/cooldown and dead target exclusion\n";
+    }
+
+    // 넓은 필드는 주변 몬스터만 나누어 보내고 빈 주변 목록도 전달해 이전 표시를 지운다.
+    {
+        Map area({100000002,0,0,-400,400,-200,400,80,12}); area.SetWorld3D(world); area.SpawnFieldMonsters(128);
+        Capture nearPeer, farPeer; Player nearPlayer(9100,9,"near",1), farPlayer(9101,9,"far",1);
+        nearPlayer.SetSession(&nearPeer); farPlayer.SetSession(&farPeer); area.AddPlayer(nearPlayer); area.AddPlayer(farPlayer);
+        auto pose = nearPlayer.GetState3D(); pose.x = -56000; pose.z = -50000; nearPlayer.SetState3D(pose);
+        pose.x = 1000000; pose.z = 1000000; farPlayer.SetState3D(pose);
+        Check(area.SendFieldMonsters(nearPlayer) && area.SendFieldMonsters(farPlayer), "Nearby split list was not sent");
+        FieldMonsterPartsHeader first, empty;
+        memcpy(&first, nearPeer.packets.front().data()+sizeof(PacketHeader), sizeof(first));
+        memcpy(&empty, farPeer.packets.front().data()+sizeof(PacketHeader), sizeof(empty));
+        Check(first.total>32 && first.total<128 && first.parts==nearPeer.packets.size() && empty.total==0 && empty.parts==1, "Nearby filter or split count wrong");
+        size_t records=0;
+        for (const auto& packet : nearPeer.packets)
+        { FieldMonsterPartsHeader part; memcpy(&part,packet.data()+sizeof(PacketHeader),sizeof(part)); records+=part.count; Check(packet.size()<=1024 && part.tick==first.tick,"Split packet budget/tick invalid"); }
+        Check(records==first.total, "Split list lost records");
+        nearPlayer.SetState3D(pose); nearPeer.packets.clear(); area.SendFieldMonsters(nearPlayer);
+        memcpy(&empty,nearPeer.packets.front().data()+sizeof(PacketHeader),sizeof(empty)); Check(empty.total==0,"Area exit retained monsters");
+        nearPlayer.PauseCombat(true); nearPlayer.SetVitals(InventoryService::Starter());
+        Check(!nearPlayer.CanAttack(), "Paused combat still permits attack");
+        nearPlayer.PauseCombat(false); pose.x=-160000; pose.z=-130000; pose.yaw=0; nearPlayer.SetState3D(pose);
+        for (uint64_t sequence=1;sequence<=3;++sequence)
+            area.AttackField(nearPlayer,{area.GetMapId(),nearPlayer.GetGeneration(),sequence,0},now+std::chrono::milliseconds(sequence*600));
+        FieldMonstersHeader visibleDrop, hiddenDrop;
+        memcpy(&visibleDrop,Last(nearPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader),sizeof(visibleDrop));
+        memcpy(&hiddenDrop,Last(farPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader),sizeof(hiddenDrop));
+        Check(visibleDrop.count==1 && hiddenDrop.count==0,"Distant drop was transmitted outside the nearby range");
+        pose.x=pose.z=1000000; nearPlayer.SetState3D(pose); area.SendFieldDrops(nearPlayer);
+        FieldMonstersHeader departedDrop; memcpy(&departedDrop,Last(nearPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader),sizeof(departedDrop));
+        size_t sent=nearPeer.packets.size(); area.SendFieldDrops(nearPlayer);
+        Check(departedDrop.count==0 && departedDrop.tick>visibleDrop.tick && nearPeer.packets.size()==sent,"Drop area exit or unchanged-list suppression failed");
+        std::cout << "[PASS] Nearby monster lists split within 1024 bytes, preserve totals and clear after area exit; paused combat blocks attack\n";
+        std::cout << "[PASS] Nearby drop visibility updates on area exit and suppresses unchanged lists\n";
+    }
+    // 같은 주변 목록을 보는 수신자는 분할 패킷 구성 결과를 공유한다.
     for (uint16_t count : {uint16_t{3}, uint16_t{32}, uint16_t{128}})
     {
         Map load({100000002, 0, 0, -400, 400, -200, 400, 80, 12}); load.SetWorld3D(world); load.SpawnFieldMonsters(count);
@@ -128,10 +187,10 @@ void RunFieldFeatureTests()
         for (uint64_t tick = 1; tick <= 100; ++tick) load.Tick(tick, now + std::chrono::milliseconds(tick * 20));
         auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         auto metrics = load.TakeFieldMonsterMetrics();
-        Check(metrics.packets == metrics.builds * peers.size() && metrics.builds == 10 && metrics.failures == 0,
+        Check(metrics.packets % peers.size() == 0 && metrics.builds <= 10 && metrics.builds > 0 && metrics.failures == 0,
             "Monster packet rebuilt per recipient or cadence changed");
-        FieldMonstersHeader snapshot; memcpy(&snapshot, peers.front()->packets.back().data() + sizeof(PacketHeader), sizeof(snapshot));
-        Check(snapshot.count == count && peers.front()->packets.back().size() <= MAX_PACKET_SIZE, "Monster load packet count/size invalid");
+        FieldMonsterPartsHeader snapshot; memcpy(&snapshot, peers.front()->packets.back().data() + sizeof(PacketHeader), sizeof(snapshot));
+        Check(snapshot.total <= count && snapshot.count <= FIELD_MONSTERS_PER_PART && snapshot.parts == (std::max)(1, (snapshot.total + 31) / 32) && peers.front()->packets.back().size() <= 1024, "Monster load packet count/size invalid");
         std::cout << "[PASS] Monster load count=" << count << " peers=32 builds=" << metrics.builds << " packets=" << metrics.packets
             << " bytes=" << metrics.bytes << " cpuMs=" << elapsed << '\n';
         for (auto& player : players) load.RemovePlayer(*player);

@@ -47,7 +47,7 @@ public:
 
     std::future<CharacterLoadResult> FindByIdAsync(uint32_t accountId, uint32_t characterId, std::shared_ptr<std::atomic<bool>> canceled);
     std::future<InventorySnapshotPacket> ApplyInventoryAsync(uint32_t accountId, uint32_t characterId,
-        InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled);
+        InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled, InventoryMutation mutation = {});
 
 private:
     CharacterLoadResult FindById(uint32_t accountId, uint32_t characterId);

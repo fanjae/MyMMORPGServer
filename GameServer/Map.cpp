@@ -111,7 +111,7 @@ namespace
     }
 }
 
-Map::Map(const MapDefinition& definition) : _definition(definition)
+Map::Map(const MapDefinition& definition, uint16_t channel) : _channel(channel), _definition(definition)
 {
 }
 
@@ -161,6 +161,8 @@ void Map::RemovePlayer(Player& player)
     _players.erase(it);
     _pendingActions.erase(player.GetCharacterId());
     _pending3D.erase(player.GetCharacterId());
+    _monsterViews.erase(player.GetCharacterId());
+    _dropViews.erase(player.GetCharacterId());
     for (auto& entry : _pending3D)
     {
         auto& queue = entry.second;
@@ -292,7 +294,7 @@ bool Map::NotifyPlayerEntered(Player& player)
     }
 
     // 늦게 입장한 캐릭터도 다음 주기까지 기다리지 않고 현재 몬스터 상태를 받는다.
-    return !Is3D() || SendFieldMonsters(player);
+    return !Is3D() || (SendFieldMonsters(player) && SendFieldDrops(player));
 }
 
 void Map::SetGeometry(const MapGeometry& geometry)

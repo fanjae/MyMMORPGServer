@@ -33,7 +33,7 @@ bool MapManager::LoadMaps(const std::string& path)
         return false;
     }
 
-    std::unordered_map<uint32_t, std::unique_ptr<Map>> maps;
+    std::unordered_map<uint64_t, std::unique_ptr<Map>> maps;
     uint32_t lineNumber = 1;
 
     while (std::getline(file, line))
@@ -118,7 +118,7 @@ bool MapManager::LoadGeometry(const std::string& directory)
 
     std::unordered_map<uint32_t, MapDefinition> definitions;
     for (const auto& entry : _maps)
-        definitions.emplace(entry.first, entry.second->GetDefinition());
+        definitions.emplace(entry.second->GetMapId(), entry.second->GetDefinition());
 
     std::string error;
     if (!MapGeometryLoader::Load(directory, definitions, _geometries, error))
@@ -146,6 +146,14 @@ bool MapManager::LoadGeometry(const std::string& directory)
     for (const auto& entry : _geometries)
         _maps.at(entry.first)->SetGeometry(entry.second);
 
+    // 지형 정의는 공유하고 캐릭터·몬스터·드롭 상태만 채널별 Map에서 소유한다.
+    for (uint16_t channel = 2; channel <= ChannelCount; ++channel) for (const auto& entry : _worlds3D)
+    {
+        auto map = std::make_unique<Map>(definitions.at(entry.first), channel);
+        map->SetGeometry(_geometries.at(entry.first)); map->SetWorld3D(entry.second); map->SpawnFieldMonsters();
+        _maps.emplace((uint64_t(channel - 1) << 32) | entry.first, std::move(map));
+    }
+
     return true;
 }
 
@@ -155,14 +163,22 @@ const MapGeometry* MapManager::FindGeometry(uint32_t mapId) const
     return it == _geometries.end() ? nullptr : &it->second;
 }
 
-Map* MapManager::FindMap(uint32_t mapId) const
+Map* MapManager::FindMap(uint32_t mapId, uint16_t channel) const
 {
-    auto it = _maps.find(mapId);
+    if (!channel || channel > ChannelCount) return nullptr;
+    auto it = _maps.find((uint64_t(channel - 1) << 32) | mapId);
 
     if (it == _maps.end())
         return nullptr;
 
     return it->second.get();
+}
+
+uint32_t MapManager::CountChannelPlayers(uint16_t channel) const
+{
+    uint32_t count = 0;
+    for (const auto& entry : _maps) if (entry.second->GetChannel() == channel && entry.second->Is3D()) count += static_cast<uint32_t>(entry.second->GetPlayerCount());
+    return count;
 }
 
 void MapManager::Advance()
@@ -211,7 +227,7 @@ void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
         if (!map.IsPlatformer() && !map.Is3D())
             continue;
         auto metrics = map.TakeMovementMetrics();
-        std::cout << "Movement metrics: intervalMs=" << intervalMs << " map=" << map.GetMapId() << " players=" << map.GetPlayerCount()
+        std::cout << "Movement metrics: intervalMs=" << intervalMs << " map=" << map.GetMapId() << " channel=" << map.GetChannel() << " players=" << map.GetPlayerCount()
             << " receivedPackets=" << metrics.receivedPackets << " receivedBytes=" << metrics.receivedBytes
             << " rejectedPackets=" << metrics.rejectedPackets << " acceptedActions=" << metrics.acceptedActions
             << " rejectedActions=" << metrics.rejectedActions << " relayPackets=" << metrics.relayPackets
@@ -220,6 +236,9 @@ void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
             << " pendingActions=" << metrics.pendingActions << " maxPendingPerRecipient=" << metrics.maxPendingPerRecipient
             << " peakPendingPerRecipient=" << metrics.peakPendingPerRecipient << " oldestPendingMs=" << metrics.oldestPendingMs
             << " maxRelayWaitMs=" << metrics.maxRelayWaitMs << '\n';
+        auto monsters=map.TakeFieldMonsterMetrics();
+        if (map.Is3D()) std::cout << "Field metrics: map=" << map.GetMapId() << " channel=" << map.GetChannel() << " monsterBuilds=" << monsters.builds
+            << " packets=" << monsters.packets << " bytes=" << monsters.bytes << " simulated=" << monsters.simulated << " failures=" << monsters.failures << '\n';
     }
     _maxTickMicroseconds = 0;
     _maxTickLagMilliseconds = 0;

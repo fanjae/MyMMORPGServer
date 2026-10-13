@@ -3,6 +3,7 @@
 #include "../ServerCore/Session.h"
 
 #include <memory>
+#include <deque>
 #include "CharacterRepository.h"
 #include "AuthTicketManager.h"
 #include "../Protocol/GamePacket.h"
@@ -10,6 +11,7 @@
 class AuthTicketManager;
 class CharacterRepository;
 class MapManager;
+class Map;
 class Player;
 class PlayerManager;
 
@@ -43,6 +45,9 @@ public:
     bool IsAuthenticating() const { return _characterLoad.valid(); }
     bool BeginInventoryRequest(const InventoryRequestPacket& request);
     InventorySnapshotPacket InventoryError(InventoryResult result) const;
+    bool QueueFieldMutation(InventoryMutation mutation, Map* dropMap = nullptr);
+    bool FieldBusy() const { return _inventoryRequest.valid() || !_mutations.empty() || _recovering; }
+    bool AcceptPickup(uint64_t sequence) { if (!sequence || sequence <= _lastPickup) return false; _lastPickup = sequence; return true; }
     void Update() override;
 
 protected:
@@ -69,4 +74,15 @@ private:
     std::chrono::steady_clock::time_point _inventoryDeadline{}, _nextInventoryRequest{};
     // 오류 응답용 상태이며 실제 변경의 기준은 매번 DB에서 다시 조회한다.
     InventorySnapshotPacket _lastInventory;
+    struct PendingMutation { InventoryMutation mutation; Map* dropMap = nullptr; };
+    std::deque<PendingMutation> _mutations;
+    PendingMutation _activeMutation;
+    uint64_t _lastPickup = 0;
+    uint64_t _inventoryRequestId = 0;
+    bool _recovering = false;
+    uint32_t _recoveryAttempts = 0;
+    std::chrono::steady_clock::time_point _recoveryAt{};
+    std::chrono::steady_clock::time_point _recoveryDeadline{};
+    void PumpMutation();
+    void FinishInventory(InventorySnapshotPacket result);
 };
