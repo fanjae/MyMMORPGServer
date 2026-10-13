@@ -1,18 +1,18 @@
 # 3D 입력·인벤토리·공유 몬스터 — 2026-10-11
 
-현재 3D 연결은 기본 공격을 포함한 protocol 9를 사용한다. 기존 2D version 6, Login version 2와 기존 opcode 1~30의 wire layout은 유지한다. 이전 3D version 7/8 실행 파일은 새 서버에 입장할 수 없으므로 함께 갱신한다.
+현재 3D 연결은 채널·생명력·장비·드롭을 포함한 protocol 11을 사용한다. 기존 2D version 6, Login version 2와 기존 opcode 1~30의 wire layout은 유지한다. 이전 3D version 7/8/9/10 실행 파일은 새 서버에 입장할 수 없으므로 함께 갱신한다.
 
 ## 추가 패킷
 
 | opcode | payload | payload 바이트 |
 |---|---|---:|
-| 31 | InventoryRequest: operation/category/source/target 각 u8, revision u64 | 12 |
-| 32 | InventorySnapshot: revision/mesos u64, HP/maxHP/MP/maxMP u16, result/slots u8, 120개 itemId u32 + quantity u16 | 746 |
-| 33 | FieldMonsters3D: mapId u32, generation/tick u64, count u16, count개 monsterId u32 + kind u8 + XYZ i32 + yaw u16 + HP/maxHP u16 + revision u64 | 22 + 31N |
+| 31 | InventoryRequest: operation/category/source/target 각 u8, revision/requestId u64 | 20 |
+| 32 | InventorySnapshot: revision/mesos u64, HP/maxHP/MP/maxMP u16, result/slots u8, 120개 슬롯 및 2개 착용 장비의 itemId u32 + quantity u16 + instanceId u64, requestId u64 | 1742 |
+| 33 | FieldMonsters3D: mapId u32, generation/tick u64, count/part/parts/total u16, count개 monsterId u32 + kind u8 + XYZ i32 + yaw u16 + HP/maxHP u16 + revision u64 | 28 + 31N (N≤32) |
 | 34 | BasicAttackRequest3D: mapId u32 + generation/sequence/actionSequence u64 | 28 |
 | 35 | BasicAttackEvent3D: mapId u32 + generation/sequence u64 + characterId u32 + result u8 + monsterId u32 + HP/maxHP u16 + revision u64 + damage/yaw u16 | 45 |
 
-별도 4바이트 게임 헤더를 사용한다. 몬스터 XYZ는 서버 단위 * 1000, yaw는 1/100도다. 현재 맵당 3마리로 몬스터 메시지 총 크기는 119바이트다.
+별도 4바이트 게임 헤더를 사용한다. 몬스터 XYZ는 서버 단위 * 1000, yaw는 1/100도다. 현재 맵당 3마리로 몬스터 메시지 총 크기는 125바이트다.
 
 ## 권한과 저장
 
@@ -25,7 +25,7 @@
 - 캐릭터 조회와 인벤토리 요청은 기존 DB 작업 스레드의 같은 Connection에서 순서대로 실행한다. 대기 작업은 최대 64개, 요청 제한 시간은 5초다. Map tick은 DB 호출을 기다리지 않는다.
 - 연결 종료 또는 대기 시간 초과 시 아직 커밋되지 않은 작업을 취소 대상으로 표시한다. 이미 커밋된 요청의 응답이 유실된 경우 재조회로 확정 상태를 확인한다.
 - 저장 파일 경로는 제거했다. 기존 `.inventory` 파일을 자동으로 가져오거나 삭제하지 않는다. 새 DB 인벤토리는 첫 조회 때 샘플 아이템으로 한 번만 생성한다.
-- 장비 착용·거래·획득은 후속 범위다. DB 초기화·기존 DB 적용·검증은 [INVENTORY_DATABASE.md](INVENTORY_DATABASE.md)를 참고한다.
+- 무기·모자 착용과 기본 드롭 획득을 지원하며 거래는 후속 범위다. DB 초기화·기존 DB 적용·검증은 [INVENTORY_DATABASE.md](INVENTORY_DATABASE.md)를 참고한다.
 
 ## 몬스터
 
@@ -33,7 +33,7 @@ MapManager가 지형 로딩 후 각 3D Map에 순찰 몬스터를 등록한다. 
 
 입장 시 현재 상태를 보내고 이후 수신자별 generation을 붙여 같은 필드 상태를 중계한다. 맵을 나간 플레이어에게 보내지 않으며 송신 실패는 해당 세션만 종료 대상으로 둔다. 클라이언트는 이전 Map/generation 또는 이전 tick의 상태를 무시하고, 최신 목록에서 사라진 몬스터를 제거한다.
 
-몬스터는 순찰과 서버 판정의 기본 공격·피격·사망·재생성을 제공한다. 플레이어를 공격하는 AI나 클라이언트가 몬스터 위치를 보고하는 패킷은 없다. 몬스터 메시지와 인벤토리 메시지는 캐릭터 행동 송신 5회 상한에 포함하지 않는다.
+몬스터는 순찰과 서버 판정의 기본 공격·피격·사망·재생성을 제공한다. 플레이어 탐지·추적·공격과 기본 물약 드롭을 지원한다. 클라이언트가 몬스터 위치를 보고하는 패킷은 없다. 몬스터 메시지와 인벤토리 메시지는 캐릭터 행동 송신 5회 상한에 포함하지 않는다.
 
 ## 확인된 결과
 
@@ -51,4 +51,8 @@ MapManager가 지형 로딩 후 각 3D Map에 순찰 몬스터를 등록한다. 
 
 ## 2026-10-12 보완
 
-입력 차단·인벤토리 조회 복구·DB 변경 슬롯 저장·몬스터 보간과 부하 검증은 [FIELD_HARDENING_2026-10-12.md](FIELD_HARDENING_2026-10-12.md)에 정리했다. 이 보완 시점에는 version 8을 사용했으며, 이후 기본 공격 추가로 현재 프로토콜은 version 9다. 기존 DB 스키마는 유지한다. 공격·하단 HP/MP·검증은 [BASIC_ATTACK_3D.md](BASIC_ATTACK_3D.md)를 참고한다.
+입력 차단·인벤토리 조회 복구·DB 변경 슬롯 저장·몬스터 보간과 부하 검증은 [FIELD_HARDENING_2026-10-12.md](FIELD_HARDENING_2026-10-12.md)에 정리했다. 이 보완 시점에는 version 8을 사용했으며, 10월 12일 기본 공격 추가 시 version 9를 사용했다. 현재는 version 11과 확장 DB 스키마를 사용한다. 공격·하단 HP/MP·검증은 [BASIC_ATTACK_3D.md](BASIC_ATTACK_3D.md)를 참고한다.
+
+## 2026-10-13 확장
+
+채널·피격·부활·장비·드롭과 opcode 36~43은 [FIELD_EXPANSION_2026-10-13.md](FIELD_EXPANSION_2026-10-13.md)에 정리했다. 피격 오류 복구·획득 결과 조회·기록 정리·주변 몬스터/드롭 전송·몬스터 목록 분할을 포함한다. 정지 목록은 1초 확인 주기, 이동 상태는 최대 200ms 주기를 사용한다. 채널 추가 구현은 대기한다.

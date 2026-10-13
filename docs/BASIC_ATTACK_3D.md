@@ -24,3 +24,5 @@
 - 실제 창 검사 기록: `artifacts/full-3d-63dd9278655f462eaf723db87bd2928a`. 최종 실행 파일의 전체 연결·서버 재시작·DB 저장 검사도 통과했으며 결과는 `artifacts/full-3d-7cc18b043b8b43a3b078530c146e9f10/integration.result`에 보존했다.
 
 실행 파일은 3D 저장소 `Builds/Movement3D/MyMMORPGClient_3D.exe`다. 반복 검증은 `Tests/NetworkReliability/RunFieldFeatures.ps1`, `RunMovement3D.ps1`, `RunFull3DIntegration.ps1`을 사용한다.
+
+현재 protocol 11의 피격·부활·장비·드롭 및 장애 복구는 [FIELD_EXPANSION_2026-10-13.md](FIELD_EXPANSION_2026-10-13.md)를 참고한다. 이 문서의 version 9와 후속 범위는 10월 12일 기록이다.
