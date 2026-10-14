@@ -21,7 +21,8 @@ namespace
         sql::Connection& _connection; bool _committed = false;
     };
 }
-InventoryRepository::InventoryRepository(sql::Connection& connection) : _connection(connection), _schema(connection.getSchema()) {}
+InventoryRepository::InventoryRepository(sql::Connection& connection, std::function<void()> afterCommit) :
+    _connection(connection), _schema(connection.getSchema()), _afterCommit(std::move(afterCommit)) {}
 
 bool InventoryRepository::TryReconnect()
 {
@@ -192,7 +193,9 @@ InventorySnapshotPacket InventoryRepository::Apply(uint32_t accountId, uint32_t 
             Write(id, original, result.result == InventoryResult::Success ? result : original, !exists);
         if (expired()) return failure;
         // 커밋 직전까지 확인한 취소·시간 초과 요청은 위의 조기 반환으로 롤백한다.
-        transaction.Commit(); CleanupRecords(); return result;
+        transaction.Commit();
+        if (_afterCommit) _afterCommit();
+        CleanupRecords(); return result;
     }
     catch (const sql::SQLException& error)
     {

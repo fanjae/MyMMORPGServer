@@ -206,6 +206,26 @@ int main()
             Scalar(connection, "SELECT COUNT(*) FROM field_combat_mutations WHERE mutation_id=800000001") == 1,
             "Record cleanup deleted active dedupe records or retained expired ones");
         std::cout << "[PASS] DB record cleanup removes expired history and retains recent claims/damage\n";
+        // 실제 MySQL 커밋 직후 결과만 잃게 하고 복구 요청이 수량·HP를 다시 변경하지 않는지 확인한다.
+        Execute(connection,"UPDATE character_inventories SET hp=40 WHERE character_id=1001");
+        auto committedBase=Apply(repository,1,1001);
+        InventoryRepository lostReply(connection,[] { throw std::runtime_error("Injected response loss after commit"); });
+        auto canceled=std::make_shared<std::atomic<bool>>(false);
+        InventoryMutation committedHit; committedHit.damage=10; committedHit.mutationId=800000003;
+        Check(lostReply.Apply(1,1001,{},canceled,std::chrono::steady_clock::now()+std::chrono::seconds(5),committedHit).result==InventoryResult::StorageError,"Post-commit hit response was not lost");
+        auto hitAgain=repository.Apply(1,1001,{},canceled,std::chrono::steady_clock::now()+std::chrono::seconds(5),committedHit);
+        Check(hitAgain.hp==committedBase.hp-10 && hitAgain.revision==committedBase.revision+1,"Post-commit hit retry doubled damage");
+        InventoryRequestPacket committedPotion{InventoryOperation::Use,1,0,0,hitAgain.revision};
+        Check(lostReply.Apply(1,1001,committedPotion,canceled,std::chrono::steady_clock::now()+std::chrono::seconds(5)).result==InventoryResult::StorageError,"Post-commit potion response was not lost");
+        auto potionAgain=Apply(repository,1,1001,committedPotion);
+        Check(potionAgain.result==InventoryResult::StaleRevision && potionAgain.hp==60 && potionAgain.entries[24].quantity==hitAgain.entries[24].quantity-1,"Post-commit potion replay consumed twice");
+        InventoryMutation committedDrop; committedDrop.dropId=700000003; committedDrop.itemId=101; committedDrop.quantity=1;
+        Check(lostReply.Apply(1,1001,{},canceled,std::chrono::steady_clock::now()+std::chrono::seconds(5),committedDrop).result==InventoryResult::StorageError,"Post-commit pickup response was not lost");
+        auto dropAgain=repository.Apply(1,1001,{},canceled,std::chrono::steady_clock::now()+std::chrono::seconds(5),committedDrop);
+        Check(dropAgain.result==InventoryResult::AlreadyTaken && dropAgain.entries[24].quantity==potionAgain.entries[24].quantity+1 && dropAgain.revision==potionAgain.revision+1,"Post-commit pickup replay awarded twice");
+        std::cout << "[PASS] Actual MySQL post-commit response loss recovers hit/potion/pickup exactly once\n";
+        Execute(connection,"UPDATE character_inventories SET hp=100,revision=4 WHERE character_id=1001");
+        Execute(connection,"UPDATE character_inventory_slots SET quantity=13 WHERE character_id=1001 AND category=1 AND slot=0");
         // 뒤의 실제 실행 파일 검사가 같은 최초 상태를 사용할 수 있도록 이번 검사 캐릭터만 복원한다.
         Execute(connection,"DELETE FROM character_inventory_slots WHERE character_id IN (1002,2001) AND category=1");
         for (uint32_t character : {1002u,2001u})
@@ -213,7 +233,7 @@ int main()
             auto rows="INSERT INTO character_inventory_slots (character_id,category,slot,item_id,quantity) VALUES ("+std::to_string(character)+",1,0,101,10),("+std::to_string(character)+",1,1,102,8),("+std::to_string(character)+",1,4,101,5)"; Execute(connection,rows.c_str());
         }
         Execute(connection,"UPDATE character_inventories SET revision=1,hp=50,mp=25 WHERE character_id IN (1002,2001)");
-        std::cout << "PASS 16 inventory database integration groups\n"; return 0;
+        std::cout << "PASS 17 inventory database integration groups\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }
