@@ -133,6 +133,8 @@ void Map::TickFieldMonsters(uint64_t, std::chrono::steady_clock::time_point now)
             if (now >= monster.respawnAt) { monster.hp = 60; ++monster.revision; monster.x=(monster.left+monster.right)/2; monster.z=monster.homeZ; monster.rest = 0.8; _monsterPacketTick = UINT64_MAX; }
             continue;
         }
+        // 사거리·방향의 실제 UI 검사는 명시한 고정 배치에서만 추적을 멈추고 판정 경계를 비교한다.
+        if (_staticFieldMonsters) continue;
         Player* victim = nullptr; double closest = 120.0 * 120.0;
         for (const auto& entry : _players)
         {
@@ -220,6 +222,7 @@ namespace
 bool Map::AttackField(Player& player, const BasicAttackRequest& request, std::chrono::steady_clock::time_point now)
 {
     if (!Is3D() || player.GetMap() != this || player.GetSession() == nullptr) return false;
+    auto started = std::chrono::steady_clock::now(); ++_monsterMetrics.attacks;
     BasicAttackEvent event{GetMapId(), player.GetGeneration(), request.sequence, player.GetCharacterId()};
     const auto& state = player.GetState3D();
     event.yaw = state.yaw;
@@ -255,8 +258,11 @@ bool Map::AttackField(Player& player, const BasicAttackRequest& request, std::ch
         event.generation = recipient.GetGeneration();
         PacketHeader header{uint16_t(sizeof(PacketHeader) + sizeof(event)), uint16_t(GamePacketOpcode::BasicAttackEvent3D)};
         char bytes[sizeof(header) + sizeof(event)]; memcpy(bytes, &header, sizeof(header)); memcpy(bytes + sizeof(header), &event, sizeof(event));
-        return recipient.GetSession()->Send(bytes, sizeof(bytes));
+        if (!recipient.GetSession()->Send(bytes, sizeof(bytes))) { ++_monsterMetrics.failures; return false; }
+        ++_monsterMetrics.attackPackets; _monsterMetrics.attackBytes += sizeof(bytes); return true;
     };
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+    _monsterMetrics.maxAttackUs = (std::max)(_monsterMetrics.maxAttackUs, static_cast<uint64_t>(elapsed));
     if (!swing) return send(player);
     for (const auto& entry : _players)
         if (entry.second->GetSession() && !send(*entry.second)) entry.second->GetSession()->RequestClose();
@@ -275,7 +281,11 @@ bool Map::SendVitals(Player& player, uint16_t damage, bool resync)
         memcpy(bytes,&header,sizeof(header)); memcpy(bytes+sizeof(header),&payload,sizeof(payload));
         if (!entry.second->GetSession()->Send(bytes,sizeof(bytes))) entry.second->GetSession()->RequestClose();
         // 복구 중단·재개에서는 상대 화면도 같은 확정 위치로 맞춘다. 일반 피격에는 추가하지 않는다.
-        else if ((resync || payload.paused) && !SendState3D(*entry.second, player)) entry.second->GetSession()->RequestClose();
+        else
+        {
+            ++_monsterMetrics.vitalsPackets; _monsterMetrics.vitalsBytes += sizeof(bytes);
+            if ((resync || payload.paused) && !SendState3D(*entry.second, player)) entry.second->GetSession()->RequestClose();
+        }
     }
     return true;
 }
@@ -304,6 +314,7 @@ bool Map::SendFieldDrops(Player& recipient)
     std::vector<char> packet(header.size); memcpy(packet.data(), &header, sizeof(header)); memcpy(packet.data() + sizeof(header), &payload, sizeof(payload));
     if (!records.empty()) memcpy(packet.data() + sizeof(header) + sizeof(payload), records.data(), records.size() * sizeof(DropRecord));
     if (!recipient.GetSession()->Send(packet.data(), static_cast<int32_t>(packet.size()))) return false;
+    ++_monsterMetrics.dropPackets; _monsterMetrics.dropBytes += packet.size();
     view.ids = std::move(ids); view.sent = true; ++view.revision;
     return true;
 }

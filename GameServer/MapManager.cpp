@@ -111,9 +111,9 @@ bool MapManager::LoadMaps(const std::string& path)
     return true;
 }
 
-bool MapManager::LoadGeometry(const std::string& directory)
+bool MapManager::LoadGeometry(const std::string& directory, uint16_t monsterCount, bool staticMonsters)
 {
-    if (_maps.empty() || !_geometries.empty())
+    if (_maps.empty() || !_geometries.empty() || !monsterCount || monsterCount > MAX_FIELD_MONSTERS)
         return false;
 
     std::unordered_map<uint32_t, MapDefinition> definitions;
@@ -141,7 +141,8 @@ bool MapManager::LoadGeometry(const std::string& directory)
     {
         _maps.at(entry.first)->SetWorld3D(entry.second);
         // 지형이 연결된 뒤에 생성해 시작 위치와 순찰의 충돌 기준을 사용할 수 있도록 한다.
-        _maps.at(entry.first)->SpawnFieldMonsters();
+        _maps.at(entry.first)->SpawnFieldMonsters(monsterCount);
+        _maps.at(entry.first)->SetFieldMonstersStatic(staticMonsters);
     }
     for (const auto& entry : _geometries)
         _maps.at(entry.first)->SetGeometry(entry.second);
@@ -150,7 +151,8 @@ bool MapManager::LoadGeometry(const std::string& directory)
     for (uint16_t channel = 2; channel <= ChannelCount; ++channel) for (const auto& entry : _worlds3D)
     {
         auto map = std::make_unique<Map>(definitions.at(entry.first), channel);
-        map->SetGeometry(_geometries.at(entry.first)); map->SetWorld3D(entry.second); map->SpawnFieldMonsters();
+        map->SetGeometry(_geometries.at(entry.first)); map->SetWorld3D(entry.second); map->SpawnFieldMonsters(monsterCount);
+        map->SetFieldMonstersStatic(staticMonsters);
         _maps.emplace((uint64_t(channel - 1) << 32) | entry.first, std::move(map));
     }
 
@@ -210,7 +212,7 @@ void MapManager::Advance()
     }
 }
 
-void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
+void MapManager::LogMetrics(size_t sessions, size_t queuedBytes, size_t peakQueuedBytes)
 {
     auto now = std::chrono::steady_clock::now();
     auto intervalMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - _metricsStarted).count();
@@ -219,7 +221,7 @@ void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
         players += entry.second->GetPlayerCount();
     // queuedBytes는 현재 TCP 송신 대기량이며 구간 최대값이나 누적 전송량이 아니다.
     std::cout << "Server metrics: intervalMs=" << intervalMs << " sessions=" << sessions << " players=" << players
-        << " queuedBytes=" << queuedBytes << " maxTickUs=" << _maxTickMicroseconds
+        << " queuedBytes=" << queuedBytes << " peakSampledQueuedBytes=" << peakQueuedBytes << " maxTickUs=" << _maxTickMicroseconds
         << " maxTickLagMs=" << _maxTickLagMilliseconds << " catchUpLimits=" << _catchUpLimits << '\n';
     for (const auto& entry : _maps)
     {
@@ -238,7 +240,10 @@ void MapManager::LogMetrics(size_t sessions, size_t queuedBytes)
             << " maxRelayWaitMs=" << metrics.maxRelayWaitMs << '\n';
         auto monsters=map.TakeFieldMonsterMetrics();
         if (map.Is3D()) std::cout << "Field metrics: map=" << map.GetMapId() << " channel=" << map.GetChannel() << " monsterBuilds=" << monsters.builds
-            << " packets=" << monsters.packets << " bytes=" << monsters.bytes << " simulated=" << monsters.simulated << " failures=" << monsters.failures << '\n';
+            << " packets=" << monsters.packets << " bytes=" << monsters.bytes << " simulated=" << monsters.simulated << " failures=" << monsters.failures
+            << " attacks=" << monsters.attacks << " attackPackets=" << monsters.attackPackets << " attackBytes=" << monsters.attackBytes
+            << " maxAttackUs=" << monsters.maxAttackUs << " vitalsPackets=" << monsters.vitalsPackets << " vitalsBytes=" << monsters.vitalsBytes
+            << " dropPackets=" << monsters.dropPackets << " dropBytes=" << monsters.dropBytes << '\n';
     }
     _maxTickMicroseconds = 0;
     _maxTickLagMilliseconds = 0;

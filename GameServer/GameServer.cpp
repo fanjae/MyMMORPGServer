@@ -17,6 +17,7 @@
 #include "ServerSession.h"
 
 #include <cstdlib>
+#include <charconv>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -52,6 +53,18 @@ int main(int argc, char* argv[])
         return 1;
     }
     MapManager mapManager;
+    uint16_t monsterCount = 3;
+    if (argc > 2)
+    {
+        // 실제 서버 부하 검사에서만 생성 수를 명시하고 평소 실행은 기존 세 마리를 유지한다.
+        std::string option = argv[2], prefix = "--field-monsters=";
+        unsigned count = 0;
+        if (option.rfind(prefix, 0) != 0) { std::cerr << "Invalid monster count option\n"; return 1; }
+        auto parsed = std::from_chars(option.data() + prefix.size(), option.data() + option.size(), count);
+        if (parsed.ec != std::errc{} || parsed.ptr != option.data() + option.size() || !count || count > MAX_FIELD_MONSTERS)
+        { std::cerr << "Monster count must be between 1 and 128\n"; return 1; }
+        monsterCount = static_cast<uint16_t>(count);
+    }
     std::filesystem::path mapPath = argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::absolute(argv[0]).parent_path() / "data" / "maps.csv";
     if (!mapManager.LoadMaps(mapPath.string()))
         return 1;
@@ -64,8 +77,13 @@ int main(int argc, char* argv[])
     }
 
     // 지형 검증을 완료한 Map만 실제 이동 시뮬레이션에 사용한다.
-    if (!mapManager.LoadGeometry(mapPath.parent_path().string()))
+    bool staticMonsters = argc > 3 && std::string(argv[3]) == "--static-field";
+    if (argc > 4 || (argc > 3 && !staticMonsters)) { std::cerr << "Invalid field option\n"; return 1; }
+    if (!mapManager.LoadGeometry(mapPath.parent_path().string(), monsterCount, staticMonsters))
         return 1;
+    // 지형과 겹쳐 제외한 개체가 있으므로 생성 요청 수와 실제 필드 수를 구분해 기록한다.
+    if (auto* field = mapManager.FindMap(100000002))
+        std::cout << "Field population: requested=" << monsterCount << " actual=" << field->GetFieldMonsterCount() << " static=" << staticMonsters << '\n';
 
     const std::string dbHost = GetEnvironmentVariable("DB_HOST");
     const std::string dbUser = GetEnvironmentVariable("DB_USER");
@@ -178,9 +196,12 @@ int main(int argc, char* argv[])
 
     auto nextCleanup = std::chrono::steady_clock::now();
     auto nextMetrics = nextCleanup + std::chrono::seconds(5);
+    size_t peakQueuedBytes = 0;
     while (true)
     {
         mapManager.Advance();
+        // 전송 전후의 대기량을 표본으로 기록한다. 커널 송신 버퍼의 크기를 뜻하지 않는다.
+        peakQueuedBytes = (std::max)(peakQueuedBytes, sessionManager.GetQueuedSendBytes());
         if (!worker.Dispatch(mapManager.GetWaitMilliseconds()))
         {
             gameListener.Close();
@@ -190,9 +211,11 @@ int main(int argc, char* argv[])
         }
 
         sessionManager.Cleanup();
+        peakQueuedBytes = (std::max)(peakQueuedBytes, sessionManager.GetQueuedSendBytes());
         if (std::chrono::steady_clock::now() >= nextMetrics)
         {
-            mapManager.LogMetrics(sessionManager.GetSessionCount(), sessionManager.GetQueuedSendBytes());
+            mapManager.LogMetrics(sessionManager.GetSessionCount(), sessionManager.GetQueuedSendBytes(), peakQueuedBytes);
+            peakQueuedBytes = sessionManager.GetQueuedSendBytes();
             nextMetrics = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         }
         if (std::chrono::steady_clock::now() >= nextCleanup)

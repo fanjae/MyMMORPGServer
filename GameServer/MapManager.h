@@ -15,14 +15,14 @@ public:
     ~MapManager();
 
     bool LoadMaps(const std::string& path);
-    bool LoadGeometry(const std::string& directory);
+    bool LoadGeometry(const std::string& directory, uint16_t monsterCount = 3, bool staticMonsters = false);
     Map* FindMap(uint32_t mapId, uint16_t channel = 1) const;
     static constexpr uint16_t ChannelCount = 3;
     uint32_t CountChannelPlayers(uint16_t channel) const;
     const MapGeometry* FindGeometry(uint32_t mapId) const;
     void Advance();
     uint32_t GetWaitMilliseconds() const;
-    void LogMetrics(size_t sessions, size_t queuedBytes);
+    void LogMetrics(size_t sessions, size_t queuedBytes, size_t peakQueuedBytes = 0);
 
 private:
     std::unordered_map<uint64_t, std::unique_ptr<Map>> _maps;

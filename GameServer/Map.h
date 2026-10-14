@@ -39,7 +39,14 @@ public:
     PickupResult ReserveDrop(Player& player, const PickupRequest& request, InventoryMutation& mutation);
     void FinishDrop(uint64_t id, uint32_t owner, InventoryResult result);
     uint16_t GetChannel() const { return _channel; }
-    struct FieldMonsterMetrics { uint64_t builds = 0, packets = 0, bytes = 0, failures = 0, simulated = 0; };
+    struct FieldMonsterMetrics
+    {
+        uint64_t builds = 0, packets = 0, bytes = 0, failures = 0, simulated = 0;
+        uint64_t attacks = 0, attackPackets = 0, attackBytes = 0, maxAttackUs = 0;
+        uint64_t vitalsPackets = 0, vitalsBytes = 0, dropPackets = 0, dropBytes = 0;
+    };
+    void SetFieldMonstersStatic(bool value) { _staticFieldMonsters = value; }
+    size_t GetFieldMonsterCount() const { return _fieldMonsters.size(); }
     FieldMonsterMetrics TakeFieldMonsterMetrics() { auto result = _monsterMetrics; _monsterMetrics = {}; return result; }
 
     struct MovementMetrics
@@ -94,6 +101,7 @@ private:
     std::chrono::steady_clock::time_point _fieldNow{};
     uint64_t _monsterPacketTick = UINT64_MAX;
     FieldMonsterMetrics _monsterMetrics;
+    bool _staticFieldMonsters = false;
     void TickFieldMonsters(uint64_t tick, std::chrono::steady_clock::time_point now);
     std::chrono::steady_clock::time_point _monsterUpdated{}, _monsterBroadcast{};
     void Tick3D(uint64_t tick, std::chrono::steady_clock::time_point now);

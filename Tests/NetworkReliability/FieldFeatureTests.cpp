@@ -119,6 +119,20 @@ void RunFieldFeatureTests()
         std::cout << "[PASS] Basic attack damage, shared results, cooldown, duplicate/map/range/facing/wall guards, death and respawn\n";
     }
 
+    // 공중 공격도 높이 차이의 포함 경계를 같은 서버 좌표 정밀도로 판정한다.
+    {
+        Map arena({100000002,0,0,-400,400,-200,400,80,12}); arena.SetWorld3D(world); arena.SpawnFieldMonsters(1);
+        Capture capture; Player airborne(8050,8,"airborne",1); airborne.SetSession(&capture); arena.AddPlayer(airborne); airborne.SetVitals(InventoryService::Starter());
+        auto pose=airborne.GetState3D(); pose.x=-160000; pose.z=-130000; pose.y=30000; pose.yaw=0; pose.grounded=0; pose.supportId=0; airborne.SetState3D(pose);
+        arena.AttackField(airborne,{arena.GetMapId(),airborne.GetGeneration(),1,0},now);
+        BasicAttackEvent event; memcpy(&event,Last(capture,GamePacketOpcode::BasicAttackEvent3D).data()+sizeof(PacketHeader),sizeof(event));
+        Check(event.result==BasicAttackResult::Hit && event.hp==40,"Air attack rejected the inclusive height boundary");
+        ++pose.y; airborne.SetState3D(pose); arena.AttackField(airborne,{arena.GetMapId(),airborne.GetGeneration(),2,0},now+std::chrono::milliseconds(600));
+        memcpy(&event,Last(capture,GamePacketOpcode::BasicAttackEvent3D).data()+sizeof(PacketHeader),sizeof(event));
+        Check(event.result==BasicAttackResult::Miss,"Air attack crossed the height boundary");
+        std::cout << "[PASS] Air attack includes 1.5m height difference and rejects the next coordinate unit\n";
+    }
+
     // 장비와 전투는 입력 상태 대신 확정한 인벤토리·필드 상태에서 판정한다.
     {
         auto starter=InventoryService::Starter();
@@ -169,8 +183,41 @@ void RunFieldFeatureTests()
         FieldMonstersHeader departedDrop; memcpy(&departedDrop,Last(nearPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader),sizeof(departedDrop));
         size_t sent=nearPeer.packets.size(); area.SendFieldDrops(nearPlayer);
         Check(departedDrop.count==0 && departedDrop.tick>visibleDrop.tick && nearPeer.packets.size()==sent,"Drop area exit or unchanged-list suppression failed");
+        DropRecord boundaryDrop;
+        // 목록 경계의 1/1000 좌표 차이에서도 진입·이탈이 반영되고 같은 바깥 목록은 반복 전송하지 않는다.
+        pose.x=-160000; pose.z=-130000; nearPlayer.SetState3D(pose); area.SendFieldDrops(nearPlayer);
+        memcpy(&boundaryDrop,Last(nearPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader)+sizeof(FieldMonstersHeader),sizeof(boundaryDrop));
+        for (int repeat=0;repeat<3;++repeat)
+        {
+            pose.x=boundaryDrop.x+320000; pose.z=boundaryDrop.z; nearPlayer.SetState3D(pose); area.SendFieldDrops(nearPlayer);
+            FieldMonstersHeader entered; memcpy(&entered,Last(nearPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader),sizeof(entered));
+            Check(entered.count==1,"Drop disappeared at the inclusive 16m boundary");
+            ++pose.x; nearPlayer.SetState3D(pose); area.SendFieldDrops(nearPlayer);
+            memcpy(&departedDrop,Last(nearPeer,GamePacketOpcode::FieldDrops3D).data()+sizeof(PacketHeader),sizeof(departedDrop));
+            sent=nearPeer.packets.size(); area.SendFieldDrops(nearPlayer);
+            Check(departedDrop.count==0 && nearPeer.packets.size()==sent,"Repeated drop boundary exit duplicated a snapshot");
+        }
+        auto includesFirstMonster=[&]()
+        {
+            for (const auto& packet : nearPeer.packets)
+            {
+                FieldMonsterPartsHeader header; memcpy(&header,packet.data()+sizeof(PacketHeader),sizeof(header));
+                for (uint16_t i=0;i<header.count;++i)
+                { FieldMonsterRecord record; memcpy(&record,packet.data()+sizeof(PacketHeader)+sizeof(header)+i*sizeof(record),sizeof(record)); if(record.monsterId==1) return true; }
+            }
+            return false;
+        };
+        for (int repeat=0;repeat<3;++repeat)
+        {
+            pose.x=-160000+320000; pose.z=-100000; nearPlayer.SetState3D(pose); nearPeer.packets.clear(); area.SendFieldMonsters(nearPlayer,false);
+            Check(includesFirstMonster(),"Monster disappeared at the inclusive 16m boundary");
+            ++pose.x; nearPlayer.SetState3D(pose); nearPeer.packets.clear(); area.SendFieldMonsters(nearPlayer,false);
+            Check(!nearPeer.packets.empty() && !includesFirstMonster(),"Monster survived the 16m boundary exit");
+            nearPeer.packets.clear(); area.SendFieldMonsters(nearPlayer,false); Check(nearPeer.packets.empty(),"Unchanged monster boundary list was resent");
+        }
         std::cout << "[PASS] Nearby monster lists split within 1024 bytes, preserve totals and clear after area exit; paused combat blocks attack\n";
         std::cout << "[PASS] Nearby drop visibility updates on area exit and suppresses unchanged lists\n";
+        std::cout << "[PASS] Monster/drop 16m boundary repeats preserve inclusion, exit and unchanged-list suppression\n";
     }
     // 같은 주변 목록을 보는 수신자는 분할 패킷 구성 결과를 공유한다.
     for (uint16_t count : {uint16_t{3}, uint16_t{32}, uint16_t{128}})
