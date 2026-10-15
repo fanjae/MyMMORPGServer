@@ -6,7 +6,8 @@ param(
     [ValidateRange(1,128)][int]$MonsterCount = 3,
     [int]$GameProxyPort = 0,
     [switch]$StaticMonsters,
-    [switch]$AttackWall
+    [switch]$AttackWall,
+    [switch]$SlowAirJump
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath "$PSScriptRoot/../..").Path
@@ -52,7 +53,11 @@ if ($Action -in @('Start','RestartGame')) {
     foreach ($row in $maps) { if ($row.mapId -in @('100000002','100000003')) { $row.spawnX = [string]$SpawnX; $row.spawnY = '0' } }
     $maps | Export-Csv -LiteralPath (Join-Path $fieldData 'maps.csv') -NoTypeInformation
     $worlds = Import-Csv -LiteralPath (Join-Path $fieldData 'worlds3d.csv')
-    foreach ($row in $worlds) { $row.spawnZ = [string]$SpawnZ }
+    foreach ($row in $worlds) {
+        $row.spawnZ = [string]$SpawnZ
+        # 실제 키 입력의 공중 높이를 관찰할 수 있도록 검사 복사본의 체공 시간만 늘린다.
+        if ($SlowAirJump) { $row.jumpSpeed='64'; $row.gravity='8' }
+    }
     $worlds | Export-Csv -LiteralPath (Join-Path $fieldData 'worlds3d.csv') -NoTypeInformation
     # CSV 로더는 따옴표 없는 숫자 레코드를 읽으므로 검사 복사본만 같은 형식으로 저장한다.
     foreach ($file in @('maps.csv','worlds3d.csv')) {

@@ -128,6 +128,15 @@ int RunMovementRelayFixture(uint16_t port, bool threeD, bool field)
                     if (!session.Send(bytes, sizeof(bytes))) throw std::runtime_error("Fixture inventory response failed");
                     session.received.erase(session.received.begin(), session.received.begin() + frame.size); continue;
                 }
+                if (threeD && frame.opcode == static_cast<uint16_t>(GamePacketOpcode::TimingPing3D))
+                {
+                    if(frame.size!=sizeof(PacketHeader)+sizeof(uint64_t)) throw std::runtime_error("Invalid fixture timing request");
+                    if(session.received.size()<frame.size) break;
+                    char response[sizeof(PacketHeader)+sizeof(uint64_t)]; PacketHeader header{sizeof(response),uint16_t(GamePacketOpcode::TimingPong3D)};
+                    memcpy(response,&header,sizeof(header)); memcpy(response+sizeof(header),session.received.data()+sizeof(header),sizeof(uint64_t));
+                    if(!session.Send(response,sizeof(response))) throw std::runtime_error("Fixture timing response failed");
+                    session.received.erase(session.received.begin(),session.received.begin()+frame.size); continue;
+                }
                 if (threeD && frame.opcode == static_cast<uint16_t>(GamePacketOpcode::EnterGameRequest))
                 {
                     if (frame.size != sizeof(PacketHeader) + sizeof(EnterGameRequest)) throw std::runtime_error("Invalid 3D fixture handshake");

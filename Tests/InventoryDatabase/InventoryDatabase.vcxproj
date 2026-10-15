@@ -12,7 +12,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="InventoryDatabase.cpp" />
+    <ClCompile Include="TradeDatabaseTests.cpp" />
     <ClCompile Include="..\..\GameServer\InventoryRepository.cpp" />
+    <ClCompile Include="..\..\GameServer\TradeRepository.cpp" />
     <ClCompile Include="..\..\GameServer\InventoryService.cpp" />
     <ClCompile Include="..\..\GameServer\CharacterRepository.cpp" />
     <ProjectReference Include="..\..\ServerCore\ServerCore.vcxproj"><Project>{5132C6E9-98BE-48AF-8D42-E7EE3D032E9E}</Project></ProjectReference>

@@ -107,6 +107,8 @@
 
 ## 재실행과 근거
 
+10월 15일 후속 실제 창 전환·사용자 키 유지/드래그·거래·적응형 이동·64명 측정과 정리 결과는 [FIELD_TRADE_TIMING_VALIDATION_2026-10-15.md](FIELD_TRADE_TIMING_VALIDATION_2026-10-15.md)에 기록한다. 아래 미완료 표시는 10월 14일 종료 시점의 상태다.
+
 ### 추가 발견: Windows 창 전환 종료와 남은 검사
 
 `final-controls-2001/player.log`에서 한 번의 네이티브 종료를 발견했다. 첫 스택은 `InputManager.OnFocusChanged → EnableOrDisableDevice → ResetDevice → NativeArray<byte> → UnsafeUtility.MemClear`였다. 이어 실행 루프 재진입 오류가 기록됐다. 종료를 통과 결과로 처리하지 않는다.

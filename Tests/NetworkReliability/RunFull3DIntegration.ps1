@@ -181,9 +181,9 @@ try
         $resultFile = Join-Path $output "player-$character/Logs/3d-smoke-full-$character.result"
         if ($players[$index].ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultFile)) { throw "Unity Player $character failed. Inspect $output" }
         $result = [IO.File]::ReadAllText($resultFile)
-        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=11' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
+        if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=12' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
         { throw "Full authentication path was not verified for $character. Inspect $output" }
-        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v11 entry, peer jump/land, inventory, shared moving monsters, rendering"
+        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v12 entry, peer jump/land, inventory, shared moving monsters, rendering"
         Write-Output $result
     }
     # 실행 파일의 인벤토리가 DB에 저장되었는지와 파일 저장 경로를 사용하지 않았는지 확인한다.

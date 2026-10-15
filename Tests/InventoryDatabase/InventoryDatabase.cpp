@@ -33,6 +33,7 @@ namespace
     void Execute(sql::Connection& connection, const char* query)
     { std::unique_ptr<sql::Statement> statement(connection.createStatement()); statement->execute(query); }
 }
+void RunTradeDatabaseTests(InventoryRepository&,sql::Connection&,DatabaseConnection&);
 int main()
 {
     try
@@ -233,7 +234,9 @@ int main()
             auto rows="INSERT INTO character_inventory_slots (character_id,category,slot,item_id,quantity) VALUES ("+std::to_string(character)+",1,0,101,10),("+std::to_string(character)+",1,1,102,8),("+std::to_string(character)+",1,4,101,5)"; Execute(connection,rows.c_str());
         }
         Execute(connection,"UPDATE character_inventories SET revision=1,hp=50,mp=25 WHERE character_id IN (1002,2001)");
-        std::cout << "PASS 17 inventory database integration groups\n"; return 0;
+        DatabaseConnection tradeConnection; Connect(tradeConnection);
+        RunTradeDatabaseTests(repository,connection,tradeConnection);
+        std::cout << "PASS 23 inventory database integration groups\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "[FAIL] " << error.what() << '\n'; return 1; }
 }

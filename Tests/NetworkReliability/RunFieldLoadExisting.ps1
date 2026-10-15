@@ -1,4 +1,4 @@
-param([switch]$UseExistingTestDatabase, [switch]$ComparisonOnly, [switch]$SpreadOnly, [ValidatePattern('^[a-z0-9-]+$')][string]$LabelPrefix='load')
+param([switch]$UseExistingTestDatabase, [switch]$ComparisonOnly, [switch]$SpreadOnly, [switch]$ScaleLong, [switch]$SlowClient, [ValidateRange(12,600)][int]$SampleSeconds=12, [ValidatePattern('^[a-z0-9-]+$')][string]$LabelPrefix='load')
 $ErrorActionPreference='Stop'
 if (!$UseExistingTestDatabase) { throw 'Explicitly select the disposable existing test database.' }
 $root=(Resolve-Path -LiteralPath "$PSScriptRoot/../..").Path
@@ -7,7 +7,10 @@ $output=Join-Path $root 'artifacts/field-validation-2026-10-14'
 $session=Join-Path $PSScriptRoot 'FieldValidationSession.ps1'
 $database=Join-Path $PSScriptRoot 'FieldValidationDatabase.ps1'
 $seed=[Collections.Generic.List[string]]::new()
-for($i=0;$i -lt 32;++$i) {
+if($SlowClient -and !$ScaleLong) { throw 'Use ScaleLong for the slow receiver comparison.' }
+if($ScaleLong -and !$PSBoundParameters.ContainsKey('SampleSeconds')) { $SampleSeconds=120 }
+$accountCount=if($ScaleLong) { 64 } else { 32 }
+for($i=0;$i -lt $accountCount;++$i) {
     $account=100+$i; $character=3001+$i; $number=$i+1
     $seed.Add("INSERT INTO accounts(id,login_id,password_hash) SELECT $account,'load$number',password_hash FROM accounts WHERE id=1 ON DUPLICATE KEY UPDATE id=$account;")
     $seed.Add("INSERT INTO characters(id,account_id,name,level) VALUES($character,$account,'Load$number',1) ON DUPLICATE KEY UPDATE id=characters.id;")
@@ -19,8 +22,10 @@ foreach($monsters in @(3,32,128)) { foreach($players in @(2,8,32)) { $conditions
 $conditions+=@{Monsters=128;Players=32;Layout='spread'}
 if($ComparisonOnly) { $conditions=@($conditions | Where-Object Players -eq 32) }
 if($SpreadOnly) { $conditions=@($conditions | Where-Object Layout -eq 'spread') }
+if($ScaleLong) { $conditions=@(@{Monsters=128;Players=64;Layout='same'},@{Monsters=128;Players=64;Layout='spread'}); if($SlowClient) { $conditions=@($conditions[0]) } }
 $env:MMORPG_TEST_PASSWORD='test1234'
 Remove-Item Env:\MMORPG_TEST_GAME_PORT -ErrorAction SilentlyContinue
+if($SlowClient) { $env:MMORPG_LOAD_SLOW_PEER='1' } else { Remove-Item Env:\MMORPG_LOAD_SLOW_PEER -ErrorAction SilentlyContinue }
 foreach($condition in $conditions) {
     $label="$LabelPrefix-$($condition.Monsters)-$($condition.Players)-$($condition.Layout)"
     # 이번 검사 세션의 서버만 재시작하고 기존 DB·테스트 결과는 그대로 사용한다.
@@ -28,7 +33,7 @@ foreach($condition in $conditions) {
     try {
         Start-Sleep -Seconds 2
         if($starter.HasExited) { throw "Load server failed: $label" }
-        dotnet (Join-Path $client 'Tests/Movement3D/bin/Debug/net9.0/Movement3D.dll') --field-load $condition.Players $condition.Layout > (Join-Path $output "$label.result") 2>&1
+        dotnet (Join-Path $client 'Tests/Movement3D/bin/Debug/net9.0/Movement3D.dll') --field-load $condition.Players $condition.Layout $SampleSeconds > (Join-Path $output "$label.result") 2>&1
         if($LASTEXITCODE -ne 0) { Get-Content (Join-Path $output "$label.result"); throw "Actual server load failed: $label" }
         Get-Content (Join-Path $output "$label.result")
     }
