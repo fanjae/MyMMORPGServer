@@ -14,6 +14,7 @@
 #include "MapManager.h"
 #include "Monster.h"
 #include "PlayerManager.h"
+#include "TradeManager.h"
 #include "ServerSession.h"
 
 #include <cstdlib>
@@ -211,6 +212,7 @@ int main(int argc, char* argv[])
         }
 
         sessionManager.Cleanup();
+        TradeManager::Update(playerManager);
         peakQueuedBytes = (std::max)(peakQueuedBytes, sessionManager.GetQueuedSendBytes());
         if (std::chrono::steady_clock::now() >= nextMetrics)
         {

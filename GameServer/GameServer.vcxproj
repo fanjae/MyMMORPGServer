@@ -150,6 +150,8 @@
     <ClCompile Include="FieldMonsters.cpp" />
     <ClCompile Include="InventoryService.cpp" />
     <ClCompile Include="InventoryRepository.cpp" />
+    <ClCompile Include="TradeRepository.cpp" />
+    <ClCompile Include="TradeManager.cpp" />
     <ClCompile Include="World3D.cpp" />
     <ClCompile Include="MapManager.cpp" />
     <ClCompile Include="MapGeometryLoader.cpp" />

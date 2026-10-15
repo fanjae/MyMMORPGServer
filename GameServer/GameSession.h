@@ -45,8 +45,11 @@ public:
     bool IsAuthenticating() const { return _characterLoad.valid(); }
     bool BeginInventoryRequest(const InventoryRequestPacket& request);
     InventorySnapshotPacket InventoryError(InventoryResult result) const;
+    void ApplyTradeInventory(const InventorySnapshotPacket& state);
+    bool AcceptTradeRequest();
+    bool BeginTradeLookup(uint64_t tradeId);
     bool QueueFieldMutation(InventoryMutation mutation, Map* dropMap = nullptr);
-    bool FieldBusy() const { return _inventoryRequest.valid() || !_mutations.empty() || _recovering; }
+    bool FieldBusy() const { return _inventoryRequest.valid() || _tradeLookup.valid() || !_mutations.empty() || _recovering; }
     bool AcceptPickup(uint64_t sequence) { if (!sequence || sequence <= _lastPickup) return false; _lastPickup = sequence; return true; }
     void Update() override;
 
@@ -80,6 +83,9 @@ private:
     uint64_t _lastPickup = 0;
     uint64_t _inventoryRequestId = 0;
     bool _recovering = false;
+    std::chrono::steady_clock::time_point _nextTradeRequest{};
+    std::future<TradeLookupResult> _tradeLookup;
+    uint64_t _tradeLookupId = 0;
     uint32_t _recoveryAttempts = 0;
     std::chrono::steady_clock::time_point _recoveryAt{};
     std::chrono::steady_clock::time_point _recoveryDeadline{};

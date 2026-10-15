@@ -10,6 +10,7 @@
 #include <atomic>
 #include <memory>
 #include "../Protocol/FieldPacket.h"
+#include "../Protocol/TradePacket.h"
 
 namespace sql
 {
@@ -46,6 +47,8 @@ public:
     ~CharacterRepository();
 
     std::future<CharacterLoadResult> FindByIdAsync(uint32_t accountId, uint32_t characterId, std::shared_ptr<std::atomic<bool>> canceled);
+    std::future<TradeCommitResult> ExchangeAsync(TradeCommitRequest request);
+    std::future<TradeLookupResult> LookupTradeAsync(uint32_t account,uint32_t character,uint64_t tradeId);
     std::future<InventorySnapshotPacket> ApplyInventoryAsync(uint32_t accountId, uint32_t characterId,
         InventoryRequestPacket request, std::shared_ptr<std::atomic<bool>> canceled, InventoryMutation mutation = {});
 

@@ -7,6 +7,7 @@
 #include "Player.h"
 #include "PlayerManager.h"
 #include "ChatService.h"
+#include "TradeManager.h"
 #include "../Protocol/GamePacket.h"
 #include "../ServerCore/Packet.h"
 
@@ -86,6 +87,8 @@ bool GamePacketHandler::HandleFieldRequest(GameSession& session, uint16_t opcode
     if (!target || !target->Is3D()) return SendChannels(session,ChannelResult::InvalidChannel);
     if (target==oldMap) return SendChannels(session,ChannelResult::Success);
     if (session.FieldBusy()) return SendChannels(session,ChannelResult::Busy);
+    if(TradeManager::Locked(player->GetCharacterId())) return SendChannels(session,ChannelResult::Busy);
+    TradeManager::Cancel(player->GetCharacterId(),session.GetPlayerManager());
     auto result=player->BeginChannelChange(now); if (result!=ChannelResult::Success) return SendChannels(session,result);
     auto pose=player->GetState3D();
     oldMap->NotifyPlayerLeaving(*player); oldMap->RemovePlayer(*player);
@@ -102,6 +105,18 @@ bool GamePacketHandler::Handle(GameSession& session, uint16_t opcode, const char
     session.GetMapManager().Advance();
     switch (static_cast<GamePacketOpcode>(opcode))
     {
+    case GamePacketOpcode::TradeRequest3D:
+    {
+        if(!session.IsAuthenticated() || session.GetProtocolVersion()!=GAME3D_PROTOCOL_VERSION || payloadSize!=sizeof(TradeRequest)) return false;
+        if(!session.AcceptTradeRequest()) return true;
+        TradeRequest request; memcpy(&request,payload,sizeof(request)); return TradeManager::Handle(session,request);
+    }
+    case GamePacketOpcode::TimingPing3D:
+    {
+        if (!session.IsAuthenticated() || session.GetProtocolVersion() != GAME3D_PROTOCOL_VERSION || payloadSize != sizeof(uint64_t)) return false;
+        uint64_t sequence; memcpy(&sequence, payload, sizeof(sequence));
+        return SendFieldPacket(session, GamePacketOpcode::TimingPong3D, sequence);
+    }
     case GamePacketOpcode::EnterGameRequest:
         return HandleEnterGame(session, payload, payloadSize);
 
@@ -246,6 +261,7 @@ bool GamePacketHandler::HandleAttack(GameSession& session, const char* payload, 
     if (!session.IsAuthenticated() || session.GetProtocolVersion() != GAME3D_PROTOCOL_VERSION ||
         session.GetPlayer() == nullptr || session.GetPlayer()->GetMap() == nullptr || payloadSize != sizeof(BasicAttackRequest)) return false;
     BasicAttackRequest request; memcpy(&request, payload, sizeof(request));
+    if(TradeManager::Locked(session.GetCharacterId())) return true;
     return session.GetPlayer()->GetMap()->AttackField(*session.GetPlayer(), request, std::chrono::steady_clock::now());
 }
 
@@ -334,7 +350,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     {
         response.result = ChangeMapResult::MapNotFound;
     }
-    else if (player->IsDead() || player->CombatPaused())
+    else if (player->IsDead() || player->CombatPaused() || TradeManager::Locked(player->GetCharacterId()))
     {
         response.result=ChangeMapResult::MapEnterFailed;
     }
@@ -353,6 +369,7 @@ bool GamePacketHandler::HandleChangeMap(GameSession& session, const char* payloa
     {
         const int32_t oldX = player->GetX();
         const int32_t oldY = player->GetY();
+        TradeManager::Cancel(player->GetCharacterId(),session.GetPlayerManager());
 
         oldMap->NotifyPlayerLeaving(*player);
         oldMap->RemovePlayer(*player);
@@ -461,6 +478,7 @@ bool GamePacketHandler::HandleMovementActions3D(GameSession& session, const char
     if (header.count == 0 || header.count > MAX_MOVEMENT_ACTIONS || payloadSize != sizeof(header) + header.count * sizeof(MovementAction3D)) return false;
     MovementAction3D actions[MAX_MOVEMENT_ACTIONS];
     memcpy(actions, payload + sizeof(header), header.count * sizeof(MovementAction3D));
+    if(TradeManager::Locked(player->GetCharacterId())) return true;
     player->GetMap()->ReceiveActions3D(*player, header, actions);
     return true;
 }

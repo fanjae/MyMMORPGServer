@@ -6,8 +6,8 @@
 constexpr uint32_t MAX_PLAYER_NAME_LENGTH = MAX_CHARACTER_NAME_LENGTH;
 constexpr uint32_t MAX_CHAT_MESSAGE_LENGTH = 128;
 constexpr uint32_t GAME_PROTOCOL_VERSION = 6;
-// 분할 몬스터 목록·전투 복구 상태를 사용하는 3D 연결은 version 11로 확인한다.
-constexpr uint32_t GAME3D_PROTOCOL_VERSION = 11;
+// 분할 몬스터 목록·전투 복구·거래·시간 측정을 사용하는 3D 연결은 version 12로 확인한다.
+constexpr uint32_t GAME3D_PROTOCOL_VERSION = 12;
 constexpr uint16_t MAX_MOVEMENT_ACTIONS = 32;
 
 enum class GamePacketOpcode : uint16_t
@@ -55,7 +55,11 @@ enum class GamePacketOpcode : uint16_t
     FieldDrops3D = 41,
     PickupRequest3D = 42,
     PickupResponse3D = 43,
-    PickupStatusRequest3D = 44
+    PickupStatusRequest3D = 44,
+    TimingPing3D = 45,
+    TimingPong3D = 46,
+    TradeRequest3D = 47,
+    TradeState3D = 48
 };
 
 enum class EnterGameResult : uint8_t

@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include "../Protocol/TradePacket.h"
 namespace sql { class Connection; }
 
 // 캐릭터 조회와 같은 DB 작업 스레드에서 공유 Connection을 순서대로 사용한다.
@@ -15,6 +16,8 @@ public:
     InventorySnapshotPacket Apply(uint32_t accountId, uint32_t characterId, const InventoryRequestPacket& request,
         const std::shared_ptr<std::atomic<bool>>& canceled, std::chrono::steady_clock::time_point deadline, InventoryMutation mutation = {});
     bool TryReconnect();
+    TradeCommitResult Exchange(const TradeCommitRequest& request);
+    TradeLookupResult LookupTrade(uint32_t account,uint32_t character,uint64_t tradeId);
     void ConnectionFailed(int code, const std::string& state);
     struct WriteMetrics { uint32_t headers = 0, slots = 0; };
     WriteMetrics LastWriteMetrics() const { return _writes; }

@@ -84,6 +84,21 @@ void CharacterRepository::Run()
     driver->threadEnd();
 }
 
+std::future<TradeCommitResult> CharacterRepository::ExchangeAsync(TradeCommitRequest request)
+{
+    std::packaged_task<TradeCommitResult()> job([this,request] { return _inventory->Exchange(request); });
+    auto result=job.get_future();
+    { std::lock_guard<std::mutex> lock(_mutex); if(_stopping || _jobs.size()>=64) return {}; _jobs.emplace([job=std::move(job)]() mutable { job(); }); }
+    _ready.notify_one(); return result;
+}
+std::future<TradeLookupResult> CharacterRepository::LookupTradeAsync(uint32_t account,uint32_t character,uint64_t tradeId)
+{
+    std::packaged_task<TradeLookupResult()> job([this,account,character,tradeId] { return _inventory->LookupTrade(account,character,tradeId); });
+    auto result=job.get_future();
+    { std::lock_guard<std::mutex> lock(_mutex); if(_stopping || _jobs.size()>=64) return {}; _jobs.emplace([job=std::move(job)]() mutable { job(); }); }
+    _ready.notify_one(); return result;
+}
+
 CharacterLoadResult CharacterRepository::FindById(uint32_t accountId, uint32_t characterId)
 {
     CharacterLoadResult queryResult;

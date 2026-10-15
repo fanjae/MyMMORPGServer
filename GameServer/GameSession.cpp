@@ -6,6 +6,7 @@
 #include "Player.h"
 #include "PlayerManager.h"
 #include "FieldIdentity.h"
+#include "TradeManager.h"
 #include <algorithm>
 
 #include <iostream>
@@ -30,6 +31,12 @@ bool GameSession::BeginCharacterLoad(const AuthTicket& ticket)
 
 void GameSession::Update()
 {
+    if(_tradeLookup.valid() && _tradeLookup.wait_for(std::chrono::seconds(0))==std::future_status::ready)
+    {
+        TradeLookupResult result; try { result=_tradeLookup.get(); } catch(...) { result.state.tradeId=_tradeLookupId; result.state.characters[0]=_characterId; result.state.stage=TradeStage::Committing; result.state.result=TradeResult::StorageError; }
+        if(result.loaded) ApplyTradeInventory(result.inventory);
+        TradeManager::SendState(*this,result.state);
+    }
     // 장기 장애에서는 기록 보관 기간을 넘겨 재시도하지 않고 연결을 종료해 저장 상태로 재접속하게 한다.
     if (_recovering && std::chrono::steady_clock::now() >= _recoveryDeadline) { RequestClose(); return; }
     // DB 완료 여부만 확인하고 입장 처리와 응답 전송은 IOCP 실행 스레드에서 수행한다.
@@ -64,7 +71,7 @@ bool GameSession::BeginInventoryRequest(const InventoryRequestPacket& request)
 {
     // 연결당 한 요청만 진행하고 연속 요청은 최소 100ms 간격으로 제한한다.
     auto now = std::chrono::steady_clock::now();
-    if (FieldBusy() || now < _nextInventoryRequest) return false;
+    if (FieldBusy() || now < _nextInventoryRequest || (TradeManager::Locked(_characterId) && request.operation!=InventoryOperation::Refresh)) return false;
     _activeMutation = {};
     _inventoryRequestId=request.requestId;
     _nextInventoryRequest = now + std::chrono::milliseconds(100);
@@ -80,6 +87,12 @@ InventorySnapshotPacket GameSession::InventoryError(InventoryResult result) cons
 
 bool GameSession::QueueFieldMutation(InventoryMutation mutation, Map* dropMap)
 {
+    if(TradeManager::Locked(_characterId))
+    {
+        if(!mutation.damage) return false;
+        TradeManager::Cancel(_characterId,_playerManager);
+        if(TradeManager::Locked(_characterId)) return false;
+    }
     if (!_player || !IsAuthenticated() || _mutations.size() >= 8 || _recovering || (!mutation.damage && FieldBusy())) return false;
     if (mutation.queryDrop)
     {
@@ -170,6 +183,8 @@ bool GameSession::OnPacket(uint16_t opcode, const char* payload, uint16_t payloa
 
 void GameSession::OnDisconnected()
 {
+    _tradeLookup={};
+    TradeManager::Cancel(_characterId,_playerManager);
     // 이전 연결의 DB 결과는 버리고 새 연결의 인증과 Player 상태에 적용하지 않는다.
     if (_loadCanceled != nullptr)
         _loadCanceled->store(true);
@@ -200,4 +215,24 @@ void GameSession::OnDisconnected()
     _accountId = 0;
     _characterId = 0;
     _player.reset();
+}
+
+bool GameSession::AcceptTradeRequest()
+{
+    auto now=std::chrono::steady_clock::now(); if(now<_nextTradeRequest) return false;
+    _nextTradeRequest=now+std::chrono::milliseconds(100); return true;
+}
+bool GameSession::BeginTradeLookup(uint64_t tradeId)
+{
+    if(_tradeLookup.valid()) return true;
+    _tradeLookupId=tradeId;
+    _tradeLookup=_characterRepository.LookupTradeAsync(_accountId,_characterId,tradeId);
+    if(!_tradeLookup.valid()) { TradeState state; state.tradeId=tradeId; state.characters[0]=_characterId; state.stage=TradeStage::Committing; state.result=TradeResult::StorageError; return TradeManager::SendState(*this,state); }
+    return true;
+}
+void GameSession::ApplyTradeInventory(const InventorySnapshotPacket& state)
+{
+    _lastInventory=state;
+    if(_player) { _player->PauseCombat(false); _player->SetVitals(state); _player->GetMap()->SendVitals(*_player); }
+    GamePacketHandler::SendInventorySnapshot(*this,state);
 }
