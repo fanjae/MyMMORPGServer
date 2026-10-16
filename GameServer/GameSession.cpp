@@ -233,6 +233,7 @@ bool GameSession::BeginTradeLookup(uint64_t tradeId)
 void GameSession::ApplyTradeInventory(const InventorySnapshotPacket& state)
 {
     _lastInventory=state;
-    if(_player) { _player->PauseCombat(false); _player->SetVitals(state); _player->GetMap()->SendVitals(*_player); }
+    // 거래 조회가 끝나도 별도로 진행 중인 미확정 피격의 조작 제한은 유지한다.
+    if(_player) { _player->PauseCombat(_recovering); _player->SetVitals(state); _player->GetMap()->SendVitals(*_player); }
     GamePacketHandler::SendInventorySnapshot(*this,state);
 }

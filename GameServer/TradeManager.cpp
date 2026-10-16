@@ -77,8 +77,12 @@ bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
         trade.expires=Clock::now()+std::chrono::seconds(30);
         auto& stored=trades.emplace(trade.state.tradeId,std::move(trade)).first->second; Publish(stored,players); return true;
     }
-    if(request.operation==TradeOperation::Query && !request.tradeId)
-    { if(auto* current=Active(player->GetCharacterId())) return Send(session,current->state); return error(TradeResult::Expired); }
+    if(request.operation==TradeOperation::Query)
+    {
+        // 이전 거래 조회가 새 거래의 표시·잠금을 덮지 않도록 현재 진행 상태를 우선한다.
+        if(auto* current=Active(player->GetCharacterId())) if(current->state.tradeId!=request.tradeId) return Send(session,current->state);
+        if(!request.tradeId) return error(TradeResult::Expired);
+    }
     auto found=trades.find(request.tradeId);
     if(found==trades.end())
     {
@@ -87,7 +91,12 @@ bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
     }
     auto& trade=found->second; int side=trade.state.characters[0]==player->GetCharacterId() ? 0 : trade.state.characters[1]==player->GetCharacterId() ? 1 : -1;
     if(side<0) return error(TradeResult::Invalid);
-    if(request.operation==TradeOperation::Query) return Send(session,trade.state);
+    if(request.operation==TradeOperation::Query)
+    {
+        // 완료 응답과 인벤토리가 함께 유실됐을 수 있으므로 현재 저장 상태도 다시 전달한다.
+        if(trade.state.stage==TradeStage::Completed) return session.BeginTradeLookup(request.tradeId);
+        return Send(session,trade.state);
+    }
     if(trade.state.stage>=TradeStage::Committing) return Send(session,trade.state);
     if(request.operation==TradeOperation::Cancel) { End(trade,TradeResult::Success,players); return true; }
     if(request.revision!=trade.state.revision) { auto state=trade.state; state.result=TradeResult::Stale; return Send(session,state); }
@@ -132,7 +141,7 @@ bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
                 trade.request.offers[i]=trade.state.offers[i];
             }
             bool empty=true; for(auto& offer:trade.request.offers) if(offer.count || offer.mesos) empty=false;
-            if(empty) return error(TradeResult::Invalid);
+            if(empty) { trade.state.confirmed[side]=0; return error(TradeResult::Invalid); }
             trade.state.stage=TradeStage::Committing; trade.repository=&session.GetCharacterRepository(); trade.pending=trade.repository->ExchangeAsync(trade.request);
             for(auto id:trade.state.characters) { auto* member=players.FindByCharacterId(id); member->PauseCombat(true); member->GetMap()->SendVitals(*member); }
         }
