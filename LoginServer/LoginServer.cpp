@@ -13,6 +13,7 @@
 #include "GameServerClient.h"
 #include "LoginSession.h"
 #include "PasswordVerifier.h"
+#include "RegistrationService.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -72,6 +73,7 @@ int main()
     AccountRepository accountRepository(*database.GetConnection());
     CharacterRepository characterRepository(*database.GetConnection());
     PasswordVerifier passwordVerifier;
+    RegistrationService registration(dbHost, dbUser, dbPassword, dbName);
 
     if (!SocketUtils::Init())
         return 1;
@@ -116,16 +118,16 @@ int main()
     // LoginSession은 공용 서비스와 Repository를 소유하지 않고 reference로 공유한다.
     // 캡처된 객체들은 main scope에서 Session보다 오래 유지된다.
     worker.RegisterListener(listener,
-        [&gameServerClient, &authKeyGenerator, &accountRepository, &characterRepository, &passwordVerifier](SOCKET socket)
+        [&gameServerClient, &authKeyGenerator, &accountRepository, &characterRepository, &passwordVerifier, &registration](SOCKET socket)
         {
-            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator, accountRepository, characterRepository, passwordVerifier);
+            return std::make_unique<LoginSession>(socket, gameServerClient, authKeyGenerator, accountRepository, characterRepository, passwordVerifier, registration);
         });
 
     std::cout << "LoginServer listening on " << listenConfig.clientBindIp << ":7776\n";
 
     while (true)
     {
-        if (!worker.Dispatch(INFINITE))
+        if (!worker.Dispatch(20))
         {
             listener.Close();
             SocketUtils::Clear();

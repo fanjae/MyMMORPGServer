@@ -147,6 +147,7 @@
     <ClCompile Include="LoginServer.cpp" />
     <ClCompile Include="LoginSession.cpp" />
     <ClCompile Include="PasswordVerifier.cpp" />
+    <ClCompile Include="RegistrationService.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AccountRepository.h" />
@@ -156,6 +157,7 @@
     <ClInclude Include="LoginPacketHandler.h" />
     <ClInclude Include="LoginSession.h" />
     <ClInclude Include="PasswordVerifier.h" />
+    <ClInclude Include="RegistrationService.h" />
     <ClInclude Include="RepositoryResult.h" />
   </ItemGroup>
   <ItemGroup>

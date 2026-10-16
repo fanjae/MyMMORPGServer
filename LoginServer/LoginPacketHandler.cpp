@@ -7,6 +7,7 @@
 #include "PasswordVerifier.h"
 #include "RepositoryResult.h"
 #include "../Protocol/LoginPacket.h"
+#include "../Protocol/RegistrationCredentials.h"
 #include "../ServerCore/Packet.h"
 
 #include <algorithm>
@@ -18,6 +19,8 @@ bool LoginPacketHandler::Handle(LoginSession& session, uint16_t opcode, const ch
 {
     switch (static_cast<LoginPacketOpcode>(opcode))
     {
+    case LoginPacketOpcode::RegistrationRequest:
+        return HandleRegistration(session, payload, payloadSize);
     case LoginPacketOpcode::LoginRequest:
         return HandleLogin(session, payload, payloadSize);
 
@@ -67,7 +70,11 @@ bool LoginPacketHandler::HandleLogin(LoginSession& session, const char* payload,
     const std::string loginId(request.loginId, loginIdLength);
     const std::string password(request.password, passwordLength);
 
-    if (loginId.empty() || password.empty())
+    if (session.RegistrationPending())
+    {
+        response.result = LoginResult::ServerError;
+    }
+    else if (loginId.empty() || password.empty())
     {
         response.result = LoginResult::InvalidCredential;
     }
@@ -105,6 +112,35 @@ bool LoginPacketHandler::HandleLogin(LoginSession& session, const char* payload,
     memcpy(sendBuffer + sizeof(header), &response, sizeof(response));
 
     return session.Send(sendBuffer, sizeof(sendBuffer));
+}
+
+bool LoginPacketHandler::SendRegistration(LoginSession& session, RegistrationResult result)
+{
+    PacketHeader header{static_cast<uint16_t>(sizeof(PacketHeader) + sizeof(result)), static_cast<uint16_t>(LoginPacketOpcode::RegistrationResponse)};
+    char bytes[sizeof(header) + sizeof(result)];
+    memcpy(bytes, &header, sizeof(header)); memcpy(bytes + sizeof(header), &result, sizeof(result));
+    return session.Send(bytes, sizeof(bytes));
+}
+
+bool LoginPacketHandler::HandleRegistration(LoginSession& session, const char* payload, uint16_t payloadSize)
+{
+    if (payloadSize != sizeof(LoginRequest)) return false;
+    LoginRequest request; memcpy(&request, payload, sizeof(request));
+    if (request.protocolVersion != LOGIN_PROTOCOL_VERSION) return SendRegistration(session, RegistrationResult::ProtocolMismatch);
+    if (!session.AcceptRegistration()) return SendRegistration(session, RegistrationResult::Busy);
+    auto read = [](const char* field, size_t size, std::string& text)
+    {
+        size_t length = strnlen_s(field, size);
+        if (length == size) return false;
+        for (size_t index = length; index < size; ++index) if (field[index] != 0) return false;
+        text.assign(field, length); return true;
+    };
+    std::string id, password;
+    if (!read(request.loginId, sizeof(request.loginId), id) || !IsValidRegistrationId(id))
+        return SendRegistration(session, RegistrationResult::InvalidId);
+    if (!read(request.password, sizeof(request.password), password) || !IsValidRegistrationPassword(password))
+        return SendRegistration(session, RegistrationResult::InvalidPassword);
+    return session.BeginRegistration(std::move(id), std::move(password));
 }
 
 bool LoginPacketHandler::HandleCharacterList(LoginSession& session, const char* payload, uint16_t payloadSize)

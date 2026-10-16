@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "RepositoryResult.h"
+#include "../Protocol/LoginPacket.h"
 
 #include <cstdint>
 #include <string>
@@ -30,6 +31,7 @@ public:
     explicit AccountRepository(sql::Connection& connection);
 
     AccountQueryResult FindByLoginId(const std::string& loginId);
+    RegistrationResult CreateWithCharacter(const std::string& loginId, const std::string& passwordHash);
 
 private:
     sql::Connection& _connection;

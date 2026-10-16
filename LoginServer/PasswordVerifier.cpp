@@ -144,6 +144,31 @@ namespace
     }
 }
 
+bool PasswordVerifier::CreateHash(const std::string& password, std::string& passwordHash) const
+{
+    passwordHash.clear();
+    if (password.empty()) return false;
+    std::vector<uint8_t> salt(16), hash(PBKDF2_HASH_SIZE);
+    if (BCryptGenRandom(nullptr, salt.data(), static_cast<ULONG>(salt.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0) return false;
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG) < 0) return false;
+    const auto status = BCryptDeriveKeyPBKDF2(algorithm,
+        reinterpret_cast<PUCHAR>(const_cast<char*>(password.data())), static_cast<ULONG>(password.size()),
+        salt.data(), static_cast<ULONG>(salt.size()), 600000, hash.data(), static_cast<ULONG>(hash.size()), 0);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    if (status < 0) return false;
+    auto hex = [](const std::vector<uint8_t>& bytes)
+    {
+        constexpr char digits[] = "0123456789abcdef";
+        std::string text; text.reserve(bytes.size() * 2);
+        for (auto value : bytes) { text += digits[value >> 4]; text += digits[value & 15]; }
+        return text;
+    };
+    // 계정마다 새 salt를 만들고 기존 로그인 검증과 같은 형식으로 저장한다.
+    passwordHash = "pbkdf2-sha256$600000$" + hex(salt) + "$" + hex(hash);
+    return true;
+}
+
 // PBKDF2-HMAC-SHA256 계산에 사용할 SHA-256 HMAC provider를 연다.
 bool PasswordVerifier::Verify(const std::string& password, const std::string& passwordHash) const
 {

@@ -16,7 +16,9 @@ enum class LoginPacketOpcode : uint16_t
     CharacterListRequest = 3,
     CharacterListResponse = 4,
     CharacterSelectRequest = 5,
-    CharacterSelectResponse = 6
+    CharacterSelectResponse = 6,
+    RegistrationRequest = 7,
+    RegistrationResponse = 8
 };
 
 enum class LoginResult : uint8_t
@@ -25,6 +27,17 @@ enum class LoginResult : uint8_t
     InvalidCredential = 1,
     ServerError = 2,
     ProtocolMismatch = 3
+};
+
+enum class RegistrationResult : uint8_t
+{
+    Success = 0,
+    DuplicateId = 1,
+    InvalidId = 2,
+    InvalidPassword = 3,
+    ServerError = 4,
+    ProtocolMismatch = 5,
+    Busy = 6
 };
 
 enum class CharacterListResult : uint8_t
