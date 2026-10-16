@@ -7,6 +7,7 @@ param(
     [switch]$ManualCombat,
     [switch]$FieldExpansion,
     [switch]$FieldRecovery,
+    [switch]$Registration,
     [ValidateRange(30, 1800)][int]$ManualTimeoutSeconds = 600
 )
 $ErrorActionPreference = 'Stop'
@@ -62,7 +63,7 @@ function Start-TestPlayer([string]$account, [uint32]$character)
     $start = [Diagnostics.ProcessStartInfo]::new($playerExe)
     $start.WorkingDirectory = $directory; $start.UseShellExecute = $false
     $start.CreateNoWindow = -not $ManualInput; $start.WindowStyle = $(if ($ManualInput) { 'Normal' } else { 'Hidden' })
-    $start.ArgumentList.Add($(if ($ManualInput) { '--manual-full' } else { '--smoke-full' }))
+    $start.ArgumentList.Add($(if ($ManualInput) { '--manual-full' } elseif($Registration) { '--smoke-register' } else { '--smoke-full' }))
     if ($ManualInput) { $start.ArgumentList.Add('--input-probe') }
     $start.ArgumentList.Add('-logFile')
     $start.ArgumentList.Add((Join-Path $directory 'player.log'))
@@ -77,6 +78,7 @@ function Start-TestPlayer([string]$account, [uint32]$character)
 
 try
 {
+    if($Registration -and ($ManualInput -or $FieldExpansion -or $FieldRecovery)) { throw 'Registration uses its own automatic player profile.' }
     # 기존 Compose DB와 볼륨을 사용하지 않고 메모리 저장소의 임시 DB를 구성한다.
     [IO.File]::WriteAllLines($envFile, @(
         "MYSQL_ROOT_PASSWORD=$databasePassword", 'MYSQL_DATABASE=mymmorpg_full_test',
@@ -167,7 +169,7 @@ try
         { throw 'No actual manual jump evidence; automatic startup is insufficient.' }
         $passed = $true; return
     }
-    $players = @((Start-TestPlayer 'test' 1001), (Start-TestPlayer 'test2' 2001))
+    $players = if($Registration) { @((Start-TestPlayer 'unity_signup_a' 1001),(Start-TestPlayer 'unity_signup_b' 2001)) } else { @((Start-TestPlayer 'test' 1001), (Start-TestPlayer 'test2' 2001)) }
     $deadline = [DateTime]::UtcNow.AddSeconds($PlayerTimeoutSeconds)
     while (@($players | Where-Object { -not $_.HasExited }).Count -gt 0)
     {
@@ -179,12 +181,24 @@ try
         $players[$index].WaitForExit()
         $character = @(1001, 2001)[$index]
         $resultFile = Join-Path $output "player-$character/Logs/3d-smoke-full-$character.result"
+        if($Registration) {
+            $found=@(Get-ChildItem -LiteralPath (Join-Path $output "player-$character/Logs") -Filter '3d-smoke-full-*.result' -File)
+            if($found.Count -ne 1) { throw 'Registration Player result missing or duplicated.' }; $resultFile=$found[0].FullName
+        }
         if ($players[$index].ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultFile)) { throw "Unity Player $character failed. Inspect $output" }
         $result = [IO.File]::ReadAllText($resultFile)
         if (-not $result.StartsWith('PASS') -or $result -notmatch 'login=True characters=True ticket=True entered=True protocol=12' -or $result -notmatch 'monsters=3 .*monsterMoved=True')
         { throw "Full authentication path was not verified for $character. Inspect $output" }
-        Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v12 entry, peer jump/land, inventory, shared moving monsters, rendering"
+        if($Registration) { Write-Output "[PASS] Unity registration Player slot ${index}: signup, login, new character, v12 entry, peer jump/land and rendering" }
+        else { Write-Output "[PASS] Unity Player ${character}: DB login, auth ticket, v12 entry, peer jump/land, inventory, shared moving monsters, rendering" }
         Write-Output $result
+        if($Registration -and $result -notmatch 'registration=True') { throw 'Player skipped actual registration.' }
+    }
+    if($Registration) {
+        $registered=docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -Nse "SELECT COUNT(*) FROM mymmorpg_full_test.accounts a JOIN mymmorpg_full_test.characters c ON c.account_id=a.id JOIN mymmorpg_full_test.character_inventories i ON i.character_id=c.id WHERE a.login_id IN (\"unity_signup_a\",\"unity_signup_b\") AND c.level=1 AND c.name=CONCAT(\"Player\",c.id)"'
+        if($LASTEXITCODE -ne 0 -or "$registered".Trim() -ne '2') { throw 'Actual Unity signup did not commit both starter characters and inventories.' }
+        Write-Output '[PASS] Two actual Unity Players register, auto-login, select new Lv1 characters, enter the game and render'
+        $passed=$true; return
     }
     # 실행 파일의 인벤토리가 DB에 저장되었는지와 파일 저장 경로를 사용하지 않았는지 확인한다.
     $inventoryRows = docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -Nse "SELECT COUNT(*) FROM mymmorpg_full_test.character_inventories"'
@@ -272,6 +286,6 @@ finally
     }
     if (Test-Path -LiteralPath $envFile) { Remove-Item -LiteralPath $envFile }
     foreach ($name in $environmentNames) { [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name]) }
-    [IO.File]::WriteAllText((Join-Path $output 'integration.result'), $(if ($passed) { $(if ($ManualInput) { 'PASS manual local 3D input session; inspect event evidence' } else { 'PASS full local 3D connection and restart persistence' }) } else { 'FAILED full local 3D connection' }))
+    [IO.File]::WriteAllText((Join-Path $output 'integration.result'), $(if ($passed) { $(if($Registration) { 'PASS actual Unity registration, auto-login, starter characters and game entry' } elseif ($ManualInput) { 'PASS manual local 3D input session; inspect event evidence' } else { 'PASS full local 3D connection and restart persistence' }) } else { 'FAILED full local 3D connection' }))
     Write-Output "Integration logs: $output"
 }

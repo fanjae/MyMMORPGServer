@@ -1,0 +1,22 @@
+{
+    "id":  "mymmorpgserver",
+    "displayName":  "MyMMORPGServer",
+    "appName":  "MyMMORPGServer Workstation",
+    "serverName":  "mymmorpgserver-chatgpt-workstation",
+    "defaultWorkingDirectoryRelative":  ".",
+    "httpPort":  2100,
+    "bootstrapFiles":  [
+                           "tools/chatgpt-hybrid-mcp/PROFILE_GUIDANCE.md"
+                       ],
+    "identityMarkers":  [
+                            {
+                                "relativePath":  "tools/chatgpt-hybrid-mcp/project.marker",
+                                "expectedLiteral":  "identity=mymmorpgserver"
+                            }
+                        ],
+    "projectType":  "dotnet",
+    "policyPacks":  [
+                        "safe-default"
+                    ],
+    "shellAccess":  "full"
+}
