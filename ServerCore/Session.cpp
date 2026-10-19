@@ -200,7 +200,7 @@ bool Session::PostSend()
     {
         int32_t error = WSAGetLastError();
 
-        // WSA_IO_PENDING은 실패가 아니라 overlapped Recv가 정상적으로 등록되어
+        // WSA_IO_PENDING은 실패가 아니라 overlapped Send가 정상적으로 등록되어
         // 이후 IOCP completion으로 완료될 예정이라는 의미
         if (error != WSA_IO_PENDING)
             return false;

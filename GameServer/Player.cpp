@@ -20,6 +20,7 @@ bool Player::AcceptMoveSequence(uint64_t sequence)
 
 void Player::BeginMap()
 {
+    // 같은 맵에 다시 입장해도 이전 이동 묶음과 구분할 수 있도록 입장 번호를 갱신한다.
     ++_generation;
     _actionSequence = _acceptedActionSequence = _batchSequence = _latestClientTick = _actionTick = _jumpId = 0;
     _airborne = false;

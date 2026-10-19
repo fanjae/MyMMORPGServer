@@ -56,6 +56,7 @@ bool TradeManager::Locked(uint32_t character)
 bool TradeManager::SendState(GameSession& session,const TradeState& state) { return Send(session,state); }
 void TradeManager::Cancel(uint32_t character,PlayerManager& players)
 {
+    // DB에 넘긴 거래는 커밋됐을 수 있으므로 취소하지 않고 저장 결과를 기다린다.
     if(auto* trade=Active(character)) if(trade->state.stage!=TradeStage::Committing) End(*trade,TradeResult::Unavailable,players);
 }
 bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
@@ -99,6 +100,7 @@ bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
     }
     if(trade.state.stage>=TradeStage::Committing) return Send(session,trade.state);
     if(request.operation==TradeOperation::Cancel) { End(trade,TradeResult::Success,players); return true; }
+    // 상대가 제안을 바꾼 뒤 도착한 확정 요청은 이전 내용을 보고 보낸 것으로 처리한다.
     if(request.revision!=trade.state.revision) { auto state=trade.state; state.result=TradeResult::Stale; return Send(session,state); }
     if(!Together(trade,players)) { End(trade,TradeResult::Unavailable,players); return true; }
     if(request.operation==TradeOperation::Accept)
@@ -127,6 +129,7 @@ bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
             if(!item.itemId || slot.quantity>item.quantity) return error(TradeResult::Stale);
             offer.items[i]={slot,item.itemId,item.instanceId};
         }
+        // 아이템이나 금액이 바뀌면 양쪽 모두 변경된 제안을 다시 확인해야 한다.
         trade.state.offers[side]=offer; trade.state.confirmed[0]=trade.state.confirmed[1]=0;
     }
     else if(request.operation==TradeOperation::Confirm)
@@ -143,6 +146,7 @@ bool TradeManager::Handle(GameSession& session,const TradeRequest& request)
             bool empty=true; for(auto& offer:trade.request.offers) if(offer.count || offer.mesos) empty=false;
             if(empty) { trade.state.confirmed[side]=0; return error(TradeResult::Invalid); }
             trade.state.stage=TradeStage::Committing; trade.repository=&session.GetCharacterRepository(); trade.pending=trade.repository->ExchangeAsync(trade.request);
+            // 거래 저장 중에는 피격으로 HP와 인벤토리 변경 번호가 달라지지 않도록 전투를 멈춘다.
             for(auto id:trade.state.characters) { auto* member=players.FindByCharacterId(id); member->PauseCombat(true); member->GetMap()->SendVitals(*member); }
         }
     }

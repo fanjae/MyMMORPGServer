@@ -66,10 +66,12 @@ bool World3DDefinition::ValidateAction(const MovementAction3D& a) const
         !inside(a.velocityX, -static_cast<int64_t>(s.speed), s.speed) ||
         !inside(a.velocityZ, -static_cast<int64_t>(s.speed), s.speed) ||
         !inside(a.velocityY, -static_cast<int64_t>(s.maxFallSpeed), s.jumpSpeed)) return false;
+    // 축별 속도가 범위 안이어도 대각선 합성 속도가 이동 상한을 넘는지 별도로 검사한다.
     int64_t speed = static_cast<int64_t>(s.speed) * 1000;
     if (a.velocityX * a.velocityX + a.velocityZ * a.velocityZ > speed * speed + 2 * speed + 1) return false;
     if (a.grounded)
     {
+        // 착지 상태는 발판 번호뿐 아니라 발 높이와 수평 겹침도 실제 지형과 일치해야 한다.
         bool supported = false;
         for (const auto& box : boxes)
             if (box.id == a.supportId && a.y == static_cast<int64_t>(box.maxY) * 1000 && a.velocityY == 0 &&

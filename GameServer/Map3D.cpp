@@ -38,6 +38,7 @@ bool Map::SendWorld3D(Player& player)
 bool Map::SendState3D(Player& recipient, const Player& player)
 {
     if (!Is3D() || recipient.GetSession() == nullptr) return false;
+    // 입장 번호는 수신자 기준으로 넣어 수신자가 이전 맵의 상태와 구분할 수 있도록 한다.
     MovementState3DPacket packet{GetMapId(), recipient.GetGeneration(),
         RelayedMovementAction3D{player.GetCharacterId(), player.GetActionTick(), player.GetState3D()}};
     return Send3D(*recipient.GetSession(), GamePacketOpcode::MovementState3D, packet);
@@ -51,6 +52,7 @@ bool Map::ReceiveActions3D(Player& player, const MovementActionsHeader& header, 
     auto reject = [this]() { ++_movementMetrics.rejectedPackets; return false; };
     if (!Is3D() || player.GetMap() != this || header.mapId != GetMapId() || header.count == 0 ||
         header.count > MAX_MOVEMENT_ACTIONS || header.latestClientTick > UINT64_MAX - 100000) return reject();
+    // 묶음 전체의 형식을 먼저 검사해 뒤쪽 행동이 잘못된 패킷을 일부만 반영하지 않도록 한다.
     uint64_t sequence = 0, tick = 0;
     for (uint16_t i = 0; i < header.count; ++i)
     {

@@ -17,6 +17,7 @@ RegistrationService::~RegistrationService()
 
 std::future<RegistrationResult> RegistrationService::Submit(std::string id, std::string password, std::shared_ptr<std::atomic<bool>> canceled)
 {
+    // 작업 실행 시점이 아닌 요청 접수 시점부터 계산해 대기열에서 보낸 시간도 제한에 포함한다.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
     std::packaged_task<RegistrationResult(DatabaseConnection&)> job(
         [this, id = std::move(id), password = std::move(password), canceled, deadline](DatabaseConnection& database) mutable
@@ -39,6 +40,7 @@ std::future<RegistrationResult> RegistrationService::Submit(std::string id, std:
         std::string hash; const bool hashed = PasswordVerifier().CreateHash(password, hash);
         SecureZeroMemory(password.data(), password.size()); password.clear();
         if (!hashed) return RegistrationResult::ServerError;
+        // 해시 계산 중 연결이 종료되거나 제한 시간을 넘겼다면 계정을 생성하지 않는다.
         if (expired()) return RegistrationResult::Busy;
         return accounts.CreateWithCharacter(id, hash);
     });

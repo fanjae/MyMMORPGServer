@@ -29,6 +29,7 @@ TradeCommitResult InventoryRepository::Exchange(const TradeCommitRequest& reques
         std::string payload(reinterpret_cast<const char*>(&request),sizeof(request));
         std::unique_ptr<sql::PreparedStatement> recorded(_connection.prepareStatement("SELECT request_payload FROM character_trade_records WHERE trade_id=?"));
         recorded->setUInt64(1,request.tradeId); std::unique_ptr<sql::ResultSet> existing(recorded->executeQuery());
+        // 같은 거래 번호와 요청 내용이 이미 저장됐으면 교환을 반복하지 않고 성공으로 처리한다.
         if (existing->next())
         {
             result.result = existing->getString(1).asStdString() == payload ? TradeResult::Success : TradeResult::Invalid;
@@ -48,6 +49,7 @@ TradeCommitResult InventoryRepository::Exchange(const TradeCommitRequest& reques
             if(transfer->executeUpdate()!=1) throw std::runtime_error("Trade equipment owner mismatch");
         }
         for(int side=0;side<2;++side) Write(request.characters[side],original[side],result.inventories[side],false);
+        // 양쪽 인벤토리와 완료 기록을 함께 커밋해 재시도 시 교환 여부를 확인할 수 있도록 한다.
         std::unique_ptr<sql::PreparedStatement> receipt(_connection.prepareStatement("INSERT INTO character_trade_records(trade_id,first_character_id,second_character_id,request_payload) VALUES (?,?,?,?)"));
         receipt->setUInt64(1,request.tradeId); receipt->setUInt(2,request.characters[0]); receipt->setUInt(3,request.characters[1]); receipt->setString(4,payload); receipt->executeUpdate();
         _connection.commit(); guard.committed=true;
@@ -67,6 +69,7 @@ TradeLookupResult InventoryRepository::LookupTrade(uint32_t account,uint32_t cha
         if(!TryReconnect()) return result;
         _connection.setAutoCommit(false);
         struct ReadGuard { sql::Connection& connection; ~ReadGuard() { try { connection.rollback(); connection.setAutoCommit(true); } catch(...) {} } } guard{_connection};
+        // 교환과 같은 캐릭터 행 잠금을 사용해 진행 중인 커밋이 끝난 뒤 결과와 인벤토리를 읽는다.
         std::unique_ptr<sql::PreparedStatement> owner(_connection.prepareStatement("SELECT id FROM characters WHERE id=? AND account_id=? FOR UPDATE"));
         owner->setUInt(1,character); owner->setUInt(2,account); std::unique_ptr<sql::ResultSet> owned(owner->executeQuery());
         if(!owned->next()) { result.state.stage=TradeStage::Cancelled; result.state.result=TradeResult::Invalid; return result; }
